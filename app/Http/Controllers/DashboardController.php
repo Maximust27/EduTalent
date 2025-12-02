@@ -7,8 +7,9 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use App\Models\User;
 use App\Models\Subject;
+use App\Models\Extra;             // Model Ekskul
 use App\Models\AcademicGrade;
-use App\Models\TalentGrade;
+use App\Models\TalentGrade;       // Model Nilai Bakat
 
 class DashboardController extends Controller
 {
@@ -19,39 +20,119 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
         
-        // Cek Role dengan Ketat
+        // 1. Cek Role Guru
         if ($user->role === 'guru') {
             return $this->teacherDashboard($user, $request);
-        } elseif ($user->role === 'admin') {
+        } 
+        // 2. Cek Role Pembina (BARU)
+        elseif ($user->role === 'pembina') {
+            return $this->coachDashboard($user); 
+        }
+        // 3. Cek Role Admin
+        elseif ($user->role === 'admin') {
             return Inertia::render('Dashboard/Admin'); 
-        } elseif ($user->role === 'pembina') {
-            return Inertia::render('Dashboard/Pembina'); 
         }
 
-        // Default: Jika role 'siswa' atau tidak diketahui, lempar ke dashboard siswa
+        // 4. Default: Siswa
         return $this->studentDashboard($user);
     }
 
     /**
-     * Logika Khusus Halaman GURU
+     * LOGIKA DASHBOARD PEMBINA (BARU)
      */
+    private function coachDashboard($user)
+    {
+        // Cari Ekskul yang dibina user ini
+        $myExtra = Extra::where('coach_id', $user->id)->first();
+
+        $students = [];
+        $availableStudents = []; // List siswa yang bisa ditambahkan
+        $stats = ['total' => 0, 'avg' => 0, 'top' => '-'];
+
+        if ($myExtra) {
+            // Ambil siswa yang SUDAH punya nilai di ekskul ini (Anggota Tim)
+            $grades = TalentGrade::with('student')
+                ->where('extra_id', $myExtra->id)
+                ->get();
+
+            $students = $grades->map(function($g) {
+                return [
+                    'id' => $g->student->id,
+                    'name' => $g->student->name,
+                    'kelas' => $g->student->kelas,
+                    'nis' => $g->student->nomor_induk, 
+                    'nilai_teknis' => $g->nilai_teknis,
+                    'observasi' => $g->observasi_bakat,
+                    'rekomendasi' => $g->rekomendasi
+                ];
+            });
+
+            // Ambil siswa yang BELUM terdaftar di ekskul ini (Available to Add)
+            // Logic: Ambil semua user role 'siswa', kecuali yang ID-nya sudah ada di $grades
+            $existingStudentIds = $grades->pluck('student_id');
+            
+            $availableStudents = User::where('role', 'siswa')
+                ->whereNotIn('id', $existingStudentIds)
+                ->select('id', 'name', 'kelas', 'nomor_induk')
+                ->orderBy('kelas')
+                ->orderBy('name')
+                ->get();
+
+            // Hitung Statistik
+            if ($students->count() > 0) {
+                $stats['total'] = $students->count();
+                $stats['avg'] = round($students->avg('nilai_teknis'));
+                $stats['top'] = $students->sortByDesc('nilai_teknis')->first()['name'];
+            }
+        }
+
+        return Inertia::render('Dashboard/Coach', [
+            'auth' => ['user' => $user],
+            'extra' => $myExtra,
+            'students' => $students,
+            'availableStudents' => $availableStudents, // Data untuk dropdown "Tambah Siswa"
+            'stats' => $stats
+        ]);
+    }
+
+    /**
+     * FUNGSI SIMPAN NILAI BAKAT (BARU)
+     */
+    public function updateTalent(Request $request)
+    {
+        $validated = $request->validate([
+            'student_id' => 'required|exists:users,id',
+            'extra_id' => 'required|exists:extras,id',
+            // nilai_teknis bisa 0 jika baru ditambahkan (default member baru)
+            'nilai_teknis' => 'required|numeric|min:0|max:100',
+            'observasi' => 'nullable|string',
+            'rekomendasi' => 'nullable|string',
+        ]);
+
+        TalentGrade::updateOrCreate(
+            [
+                'student_id' => $validated['student_id'],
+                'extra_id' => $validated['extra_id'],
+            ],
+            [
+                'nilai_teknis' => $validated['nilai_teknis'],
+                'observasi_bakat' => $validated['observasi'],
+                'rekomendasi' => $validated['rekomendasi'],
+            ]
+        );
+
+        return redirect()->back()->with('success', 'Data ekskul berhasil disimpan!');
+    }
+
+    // --- LOGIKA GURU (LAMA - TETAP ADA) ---
     private function teacherDashboard($user, $request)
     {
-        // 1. Ambil Mapel yang diampu Guru ini
         $mySubjects = Subject::where('teacher_id', $user->id)->get();
+        $classList = User::where('role', 'siswa')->select('kelas')->distinct()->orderBy('kelas')->pluck('kelas');
 
-        // 2. Ambil Daftar Kelas Unik
-        $classList = User::where('role', 'siswa')
-            ->select('kelas')
-            ->distinct()
-            ->orderBy('kelas')
-            ->pluck('kelas');
-
-        // 3. Filter Aktif
         $selectedClass = $request->input('kelas', $classList->first());
         $selectedSubjectId = $request->input('subject_id', $mySubjects->first()->id ?? null);
 
-        // 4. Ambil Siswa
         $students = [];
         if ($selectedClass && $selectedSubjectId) {
             $students = User::where('role', 'siswa')
@@ -74,25 +155,16 @@ class DashboardController extends Controller
                 });
         }
 
-        // 5. Cek Wali Kelas (Dummy Logic dulu)
-        $isHomeroom = 'XII MIPA 1';
-
         return Inertia::render('Dashboard/Teacher', [
             'auth' => ['user' => $user],
             'subjects' => $mySubjects,
             'classes' => $classList,
             'students' => $students,
-            'filters' => [
-                'kelas' => $selectedClass,
-                'subject_id' => $selectedSubjectId
-            ],
-            'homeroom' => $isHomeroom
+            'filters' => ['kelas' => $selectedClass, 'subject_id' => $selectedSubjectId],
+            'homeroom' => 'XII MIPA 1'
         ]);
     }
 
-    /**
-     * Fungsi Simpan Nilai (Untuk Guru)
-     */
     public function updateGrade(Request $request)
     {
         $validated = $request->validate([
@@ -104,23 +176,14 @@ class DashboardController extends Controller
         ]);
 
         AcademicGrade::updateOrCreate(
-            [
-                'student_id' => $validated['student_id'],
-                'subject_id' => $validated['subject_id'],
-            ],
-            [
-                'uts' => $validated['uts'],
-                'uas' => $validated['uas'],
-                'catatan_guru' => $validated['catatan'],
-            ]
+            ['student_id' => $validated['student_id'], 'subject_id' => $validated['subject_id']],
+            ['uts' => $validated['uts'], 'uas' => $validated['uas'], 'catatan_guru' => $validated['catatan']]
         );
 
         return redirect()->back()->with('success', 'Nilai berhasil disimpan!');
     }
 
-    /**
-     * Logika Khusus Halaman SISWA
-     */
+    // --- LOGIKA SISWA (LAMA - TETAP ADA) ---
     private function studentDashboard($user)
     {
         $academics = AcademicGrade::with('subject')
@@ -153,16 +216,12 @@ class DashboardController extends Controller
                 ];
             });
 
-        $analysis = [
-            'jurusan' => 'Belum Cukup Data',
-            'alasan' => 'Silakan hubungi guru untuk melengkapi nilai akademik dan ekskul.',
-        ];
-
+        $analysis = ['jurusan' => 'Belum Cukup Data', 'alasan' => 'Silakan hubungi guru untuk melengkapi nilai.'];
         if ($academics->isNotEmpty()) {
             $bestMapel = $academics->sortByDesc('nilai')->first();
             if ($bestMapel['nilai'] >= 80) {
-                $analysis['jurusan'] = 'Potensi di ' . $bestMapel['mapel'];
-                $analysis['alasan'] = "Nilai tertinggi kamu ada di mata pelajaran ini ({$bestMapel['nilai']}).";
+               $analysis['jurusan'] = 'Rekomendasi Tersedia'; 
+               $analysis['alasan'] = 'Berdasarkan nilai tertinggi di ' . $bestMapel['mapel'];
             }
         }
 

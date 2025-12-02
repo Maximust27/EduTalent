@@ -24,6 +24,8 @@ Route::middleware('auth')->group(function () {
 
     // TAMBAHAN: Route untuk Guru menyimpan nilai
     Route::post('/grades/update', [DashboardController::class, 'updateGrade'])->name('grades.update');
+    // TAMBAHAN: Route untuk Pembina menyimpan nilai
+    Route::post('/talent/update', [DashboardController::class, 'updateTalent'])->name('talent.update');
 });
 
 require __DIR__.'/auth.php';
