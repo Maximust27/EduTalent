@@ -1,9 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 
-// --- [BAGIAN 1] MOCK UNTUK PREVIEW DISINI (HAPUS INI SAAT DI PROJECT ASLI) ---
-
-// ---------------------------------------------------------------------------
-
 import { Head, router, usePage } from '@inertiajs/react';
 
 // --- ICONS (SVG) ---

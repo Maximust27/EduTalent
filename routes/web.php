@@ -10,6 +10,8 @@ Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
     ]);
 });
 
@@ -22,9 +24,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // TAMBAHAN: Route untuk Guru menyimpan nilai
+    // Route tambahan untuk fitur guru/pembina
     Route::post('/grades/update', [DashboardController::class, 'updateGrade'])->name('grades.update');
-    // TAMBAHAN: Route untuk Pembina menyimpan nilai
     Route::post('/talent/update', [DashboardController::class, 'updateTalent'])->name('talent.update');
 });
 

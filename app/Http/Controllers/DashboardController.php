@@ -20,20 +20,21 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
         
-        // 1. Cek Role Guru
+        // --- DEBUGGING SEMENTARA (HAPUS NANTI) ---
+        // dd($user->role, $user->email); 
+        // -----------------------------------------
+    
         if ($user->role === 'guru') {
             return $this->teacherDashboard($user, $request);
         } 
-        // 2. Cek Role Pembina (BARU)
         elseif ($user->role === 'pembina') {
             return $this->coachDashboard($user); 
         }
-        // 3. Cek Role Admin
         elseif ($user->role === 'admin') {
             return Inertia::render('Dashboard/Admin'); 
         }
-
-        // 4. Default: Siswa
+    
+        // Default fallback ke siswa
         return $this->studentDashboard($user);
     }
 
