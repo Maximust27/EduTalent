@@ -27,6 +27,11 @@ Route::middleware('auth')->group(function () {
     // Route tambahan untuk fitur guru/pembina
     Route::post('/grades/update', [DashboardController::class, 'updateGrade'])->name('grades.update');
     Route::post('/talent/update', [DashboardController::class, 'updateTalent'])->name('talent.update');
+    Route::delete('/pembina/student/remove/{studentId}', [DashboardController::class, 'removeStudentFromTalent'])->name('pembina.removeStudent');
+
+    // Route Khusus Admin
+    Route::post('/admin/user/save', [DashboardController::class, 'saveUser'])->name('admin.saveUser');
+    Route::delete('/admin/user/delete/{id}', [DashboardController::class, 'deleteUser'])->name('admin.deleteUser');
 });
 
 require __DIR__.'/auth.php';

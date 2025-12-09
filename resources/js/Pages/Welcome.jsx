@@ -1,14 +1,5 @@
-// import { Link, Head } from '@inertiajs/react'; // Aktifkan baris ini di project Laravel asli Anda
+import { Link, Head } from '@inertiajs/react'; // Aktifkan baris ini di project Laravel asli Anda
 import { useState, useEffect } from 'react';
-
-// --- MOCK COMPONENTS (Untuk Preview Saja) ---
-// Hapus bagian ini saat dipasang di Project Laravel Anda
-const Link = ({ href, children, className }) => <a href={href} className={className}>{children}</a>;
-const Head = ({ title }) => {
-    if (typeof document !== 'undefined') document.title = title;
-    return null;
-};
-// ---------------------------------------------
 
 // --- CUSTOM SVG ICONS ---
 const GraduationIcon = ({ className }) => (

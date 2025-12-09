@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log; // Tambahkan Log untuk debugging
 use Inertia\Inertia;
 use App\Models\User;
 use App\Models\Subject;
-use App\Models\Extra;             // Model Ekskul
+use App\Models\Extra;
 use App\Models\AcademicGrade;
-use App\Models\TalentGrade;       // Model Nilai Bakat
+use App\Models\TalentGrade;
 
 class DashboardController extends Controller
 {
@@ -20,10 +21,6 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
         
-        // --- DEBUGGING SEMENTARA (HAPUS NANTI) ---
-        // dd($user->role, $user->email); 
-        // -----------------------------------------
-    
         if ($user->role === 'guru') {
             return $this->teacherDashboard($user, $request);
         } 
@@ -31,55 +28,131 @@ class DashboardController extends Controller
             return $this->coachDashboard($user); 
         }
         elseif ($user->role === 'admin') {
-            return Inertia::render('Dashboard/Admin'); 
+            return $this->adminDashboard($user); 
         }
-    
-        // Default fallback ke siswa
+
+        // Default: Siswa
         return $this->studentDashboard($user);
     }
 
-    /**
-     * LOGIKA DASHBOARD PEMBINA (BARU)
-     */
+    // ==========================================
+    // 1. LOGIKA ADMIN
+    // ==========================================
+    private function adminDashboard($user)
+    {
+        // Ambil data user
+        $users = User::orderBy('created_at', 'desc')->get()->map(function($u) {
+            $subject = Subject::where('teacher_id', $u->id)->first();
+            $extra = Extra::where('coach_id', $u->id)->first();
+
+            return [
+                'id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+                'role' => $u->role,
+                'nomor_induk' => $u->nomor_induk,
+                'kelas' => $u->kelas,
+                'mapel_ajar' => $subject ? $subject->nama_mapel : '-',
+                'ekskul_bina' => $extra ? $extra->nama_ekskul : '-',
+                // Data ID untuk form edit
+                'subject_id' => $subject ? $subject->id : '',
+                'extra_id' => $extra ? $extra->id : '',
+            ];
+        });
+
+        $stats = [
+            'total_user' => $users->count(),
+            'guru' => $users->where('role', 'guru')->count(),
+            'siswa' => $users->where('role', 'siswa')->count(),
+            'pembina' => $users->where('role', 'pembina')->count(),
+        ];
+
+        return Inertia::render('Dashboard/Admin', [
+            'auth' => ['user' => $user],
+            'users' => $users,
+            'subjects' => Subject::all(),
+            'extras' => Extra::all(),
+            'stats' => $stats
+        ]);
+    }
+
+    public function saveUser(Request $request)
+    {
+        $rules = [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email', 
+            'role' => 'required|in:admin,guru,pembina,siswa',
+            'nomor_induk' => 'nullable|string',
+        ];
+
+        if (!$request->id) {
+            $rules['password'] = 'required|min:6';
+            $rules['email'] .= '|unique:users,email';
+        }
+
+        $request->validate($rules);
+
+        $userData = [
+            'name' => $request->name,
+            'email' => $request->email,
+            'role' => $request->role,
+            'nomor_induk' => $request->nomor_induk,
+            'kelas' => ($request->role === 'siswa') ? $request->kelas : null,
+        ];
+
+        if ($request->filled('password')) {
+            $userData['password'] = bcrypt($request->password);
+        }
+
+        $user = User::updateOrCreate(['id' => $request->id], $userData);
+
+        // Update Assignment
+        Subject::where('teacher_id', $user->id)->update(['teacher_id' => null]);
+        Extra::where('coach_id', $user->id)->update(['coach_id' => null]);
+
+        if ($user->role === 'guru' && $request->subject_id) {
+            Subject::where('id', $request->subject_id)->update(['teacher_id' => $user->id]);
+        }
+        elseif ($user->role === 'pembina' && $request->extra_id) {
+            Extra::where('id', $request->extra_id)->update(['coach_id' => $user->id]);
+        }
+
+        return redirect()->back()->with('success', 'Data pengguna berhasil disimpan!');
+    }
+
+    public function deleteUser($id)
+    {
+        if ($id == Auth::id()) return redirect()->back()->with('error', 'Tidak bisa hapus akun sendiri!');
+        User::findOrFail($id)->delete();
+        return redirect()->back()->with('success', 'Pengguna berhasil dihapus.');
+    }
+
+    // ==========================================
+    // 2. LOGIKA PEMBINA (COACH)
+    // ==========================================
     private function coachDashboard($user)
     {
-        // Cari Ekskul yang dibina user ini
         $myExtra = Extra::where('coach_id', $user->id)->first();
-
         $students = [];
-        $availableStudents = []; // List siswa yang bisa ditambahkan
+        $availableStudents = [];
         $stats = ['total' => 0, 'avg' => 0, 'top' => '-'];
 
         if ($myExtra) {
-            // Ambil siswa yang SUDAH punya nilai di ekskul ini (Anggota Tim)
-            $grades = TalentGrade::with('student')
-                ->where('extra_id', $myExtra->id)
-                ->get();
-
+            $grades = TalentGrade::with('student')->where('extra_id', $myExtra->id)->get();
+            
             $students = $grades->map(function($g) {
                 return [
-                    'id' => $g->student->id,
-                    'name' => $g->student->name,
-                    'kelas' => $g->student->kelas,
-                    'nis' => $g->student->nomor_induk, 
-                    'nilai_teknis' => $g->nilai_teknis,
-                    'observasi' => $g->observasi_bakat,
-                    'rekomendasi' => $g->rekomendasi
+                    'id' => $g->student->id, 'name' => $g->student->name, 'kelas' => $g->student->kelas,
+                    'nomor_induk' => $g->student->nomor_induk, 'nilai_teknis' => $g->nilai_teknis,
+                    'observasi' => $g->observasi_bakat, 'rekomendasi' => $g->rekomendasi
                 ];
             });
 
-            // Ambil siswa yang BELUM terdaftar di ekskul ini (Available to Add)
-            // Logic: Ambil semua user role 'siswa', kecuali yang ID-nya sudah ada di $grades
-            $existingStudentIds = $grades->pluck('student_id');
-            
+            $existingIds = $grades->pluck('student_id');
             $availableStudents = User::where('role', 'siswa')
-                ->whereNotIn('id', $existingStudentIds)
-                ->select('id', 'name', 'kelas', 'nomor_induk')
-                ->orderBy('kelas')
-                ->orderBy('name')
-                ->get();
+                ->whereNotIn('id', $existingIds)
+                ->select('id', 'name', 'kelas', 'nomor_induk')->orderBy('kelas')->get();
 
-            // Hitung Statistik
             if ($students->count() > 0) {
                 $stats['total'] = $students->count();
                 $stats['avg'] = round($students->avg('nilai_teknis'));
@@ -88,44 +161,59 @@ class DashboardController extends Controller
         }
 
         return Inertia::render('Dashboard/Coach', [
-            'auth' => ['user' => $user],
-            'extra' => $myExtra,
-            'students' => $students,
-            'availableStudents' => $availableStudents, // Data untuk dropdown "Tambah Siswa"
-            'stats' => $stats
+            'auth' => ['user' => $user], 'extra' => $myExtra,
+            'students' => $students, 'availableStudents' => $availableStudents, 'stats' => $stats
         ]);
+    }
+
+    public function updateTalent(Request $request)
+    {
+        $val = $request->validate([
+            'student_id' => 'required|exists:users,id', 'extra_id' => 'required|exists:extras,id',
+            'nilai_teknis' => 'required|numeric', 'observasi' => 'nullable', 'rekomendasi' => 'nullable'
+        ]);
+        
+        TalentGrade::updateOrCreate(
+            ['student_id' => $val['student_id'], 'extra_id' => $val['extra_id']],
+            ['nilai_teknis' => $val['nilai_teknis'], 'observasi_bakat' => $val['observasi'], 'rekomendasi' => $val['rekomendasi']]
+        );
+        return redirect()->back()->with('success', 'Data tersimpan!');
     }
 
     /**
-     * FUNGSI SIMPAN NILAI BAKAT (BARU)
+     * Method untuk menghapus siswa dari ekskul (Hapus TalentGrade)
      */
-    public function updateTalent(Request $request)
+    public function removeStudentFromTalent($studentId)
     {
-        $validated = $request->validate([
-            'student_id' => 'required|exists:users,id',
-            'extra_id' => 'required|exists:extras,id',
-            // nilai_teknis bisa 0 jika baru ditambahkan (default member baru)
-            'nilai_teknis' => 'required|numeric|min:0|max:100',
-            'observasi' => 'nullable|string',
-            'rekomendasi' => 'nullable|string',
-        ]);
+        $user = Auth::user();
+        Log::info("Mencoba menghapus siswa ID: $studentId oleh Pembina ID: " . $user->id);
+        
+        // Pastikan hanya pembina yang bisa akses
+        if ($user->role !== 'pembina') {
+            return redirect()->back()->with('error', 'Akses ditolak.');
+        }
 
-        TalentGrade::updateOrCreate(
-            [
-                'student_id' => $validated['student_id'],
-                'extra_id' => $validated['extra_id'],
-            ],
-            [
-                'nilai_teknis' => $validated['nilai_teknis'],
-                'observasi_bakat' => $validated['observasi'],
-                'rekomendasi' => $validated['rekomendasi'],
-            ]
-        );
+        $myExtra = Extra::where('coach_id', $user->id)->first();
 
-        return redirect()->back()->with('success', 'Data ekskul berhasil disimpan!');
+        if ($myExtra) {
+            // Hapus record di TalentGrade yang menghubungkan siswa dengan ekskul ini
+            $deleted = TalentGrade::where('student_id', $studentId)
+                ->where('extra_id', $myExtra->id)
+                ->delete();
+            
+            if ($deleted) {
+                return redirect()->back()->with('success', 'Siswa berhasil dikeluarkan dari ekskul.');
+            } else {
+                return redirect()->back()->with('error', 'Siswa tidak ditemukan di ekskul ini.');
+            }
+        }
+
+        return redirect()->back()->with('error', 'Ekskul tidak ditemukan.');
     }
 
-    // --- LOGIKA GURU (LAMA - TETAP ADA) ---
+    // ==========================================
+    // 3. LOGIKA GURU (TEACHER)
+    // ==========================================
     private function teacherDashboard($user, $request)
     {
         $mySubjects = Subject::where('teacher_id', $user->id)->get();
@@ -136,31 +224,22 @@ class DashboardController extends Controller
 
         $students = [];
         if ($selectedClass && $selectedSubjectId) {
-            $students = User::where('role', 'siswa')
-                ->where('kelas', $selectedClass)
+            $students = User::where('role', 'siswa')->where('kelas', $selectedClass)
                 ->with(['academicGrades' => function($query) use ($selectedSubjectId) {
                     $query->where('subject_id', $selectedSubjectId);
-                }])
-                ->get()
-                ->map(function ($student) use ($selectedSubjectId) {
+                }])->get()->map(function ($student) use ($selectedSubjectId) {
                     $grade = $student->academicGrades->first();
                     return [
-                        'id' => $student->id,
-                        'name' => $student->name,
-                        'nis' => $student->nomor_induk,
-                        'uts' => $grade->uts ?? 0,
-                        'uas' => $grade->uas ?? 0,
-                        'catatan' => $grade->catatan_guru ?? '',
+                        'id' => $student->id, 'name' => $student->name, 'nis' => $student->nomor_induk,
+                        'uts' => $grade->uts ?? 0, 'uas' => $grade->uas ?? 0, 'catatan' => $grade->catatan_guru ?? '',
                         'subject_id' => $selectedSubjectId
                     ];
                 });
         }
 
         return Inertia::render('Dashboard/Teacher', [
-            'auth' => ['user' => $user],
-            'subjects' => $mySubjects,
-            'classes' => $classList,
-            'students' => $students,
+            'auth' => ['user' => $user], 'subjects' => $mySubjects, 'classes' => $classList,
+            'students' => $students, 
             'filters' => ['kelas' => $selectedClass, 'subject_id' => $selectedSubjectId],
             'homeroom' => 'XII MIPA 1'
         ]);
@@ -168,69 +247,50 @@ class DashboardController extends Controller
 
     public function updateGrade(Request $request)
     {
-        $validated = $request->validate([
-            'student_id' => 'required|exists:users,id',
-            'subject_id' => 'required|exists:subjects,id',
-            'uts' => 'required|numeric|min:0|max:100',
-            'uas' => 'required|numeric|min:0|max:100',
-            'catatan' => 'nullable|string|max:255',
+        $val = $request->validate([
+            'student_id' => 'required', 'subject_id' => 'required',
+            'uts' => 'required|numeric', 'uas' => 'required|numeric', 'catatan' => 'nullable'
         ]);
-
+        
         AcademicGrade::updateOrCreate(
-            ['student_id' => $validated['student_id'], 'subject_id' => $validated['subject_id']],
-            ['uts' => $validated['uts'], 'uas' => $validated['uas'], 'catatan_guru' => $validated['catatan']]
+            ['student_id' => $val['student_id'], 'subject_id' => $val['subject_id']],
+            ['uts' => $val['uts'], 'uas' => $val['uas'], 'catatan_guru' => $val['catatan']]
         );
-
-        return redirect()->back()->with('success', 'Nilai berhasil disimpan!');
+        return redirect()->back()->with('success', 'Nilai tersimpan!');
     }
 
-    // --- LOGIKA SISWA (LAMA - TETAP ADA) ---
+    // ==========================================
+    // 4. LOGIKA SISWA (STUDENT)
+    // ==========================================
     private function studentDashboard($user)
     {
-        $academics = AcademicGrade::with('subject')
-            ->where('student_id', $user->id)
-            ->get()
-            ->map(function ($grade) {
-                $nilaiAkhir = ($grade->uts + $grade->uas) / 2;
-                return [
-                    'mapel' => $grade->subject->nama_mapel,
-                    'uts' => $grade->uts,
-                    'uas' => $grade->uas,
-                    'nilai' => round($nilaiAkhir),
-                    'catatan' => $grade->catatan_guru ?? 'Belum ada catatan.',
-                ];
-            });
+        $academics = AcademicGrade::with('subject')->where('student_id', $user->id)->get()->map(function ($grade) {
+            return [
+                'mapel' => $grade->subject->nama_mapel, 'uts' => $grade->uts, 'uas' => $grade->uas,
+                'nilai' => round(($grade->uts + $grade->uas) / 2), 'catatan' => $grade->catatan_guru ?? '-'
+            ];
+        });
 
-        $talents = TalentGrade::with('extra')
-            ->where('student_id', $user->id)
-            ->get()
-            ->map(function ($grade) {
-                $predikat = 'Kompeten';
-                if ($grade->nilai_teknis >= 90) $predikat = 'Sangat Berbakat';
-                elseif ($grade->nilai_teknis >= 80) $predikat = 'Berbakat';
+        $talents = TalentGrade::with('extra')->where('student_id', $user->id)->get()->map(function ($grade) {
+            $predikat = $grade->nilai_teknis >= 90 ? 'Sangat Berbakat' : 'Kompeten';
+            return [
+                'ekskul' => $grade->extra->nama_ekskul, 'nilai_teknis' => $grade->nilai_teknis,
+                'predikat' => $predikat, 'observasi' => $grade->observasi_bakat ?? '-'
+            ];
+        });
 
-                return [
-                    'ekskul' => $grade->extra->nama_ekskul,
-                    'nilai_teknis' => $grade->nilai_teknis,
-                    'predikat' => $predikat,
-                    'observasi' => $grade->observasi_bakat ?? 'Belum ada observasi.',
-                ];
-            });
-
-        $analysis = ['jurusan' => 'Belum Cukup Data', 'alasan' => 'Silakan hubungi guru untuk melengkapi nilai.'];
+        $analysis = ['jurusan' => 'Belum Cukup Data', 'alasan' => 'Hubungi guru.'];
         if ($academics->isNotEmpty()) {
-            $bestMapel = $academics->sortByDesc('nilai')->first();
-            if ($bestMapel['nilai'] >= 80) {
-               $analysis['jurusan'] = 'Rekomendasi Tersedia'; 
-               $analysis['alasan'] = 'Berdasarkan nilai tertinggi di ' . $bestMapel['mapel'];
+            $best = $academics->sortByDesc('nilai')->first();
+            if ($best['nilai'] >= 80) {
+                $analysis['jurusan'] = 'Potensi di ' . $best['mapel'];
+                $analysis['alasan'] = 'Nilai tertinggi: ' . $best['nilai'];
             }
         }
 
         return Inertia::render('Dashboard/Student', [
-            'auth' => ['user' => $user],
-            'academics' => $academics,
-            'talents' => $talents,
-            'analysis' => $analysis
+            'auth' => ['user' => $user], 'academics' => $academics, 
+            'talents' => $talents, 'analysis' => $analysis
         ]);
     }
 }

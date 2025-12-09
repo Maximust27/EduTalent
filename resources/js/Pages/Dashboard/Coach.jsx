@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Head, router } from '@inertiajs/react'; // Import Asli Aktif
+import { Head, router } from '@inertiajs/react';
 
 // --- ICONS ---
 const Icons = {
@@ -10,6 +10,7 @@ const Icons = {
     Logout: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
     Plus: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
     Close: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    Trash: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
 };
 
 // --- COMPONENTS ---
@@ -43,7 +44,7 @@ const Toast = ({ message, isVisible, onClose }) => {
 const Navbar = ({ user, extraName }) => {
     const handleLogout = (e) => {
         e.preventDefault();
-        router.post(route('logout')); // Pastikan ini route('logout')
+        router.post(typeof window !== 'undefined' && window.route ? window.route('logout') : '/logout');
     };
 
     return (
@@ -91,8 +92,8 @@ const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToa
 
         setLoading(true);
         
-        // Gunakan route asli Laravel 'talent.update'
-        router.post(route('talent.update'), {
+        const url = typeof window !== 'undefined' && window.route ? window.route('talent.update') : '/talent/update';
+        router.post(url, {
             student_id: selectedStudent,
             extra_id: extraId,
             nilai_teknis: 0, // Nilai awal 0
@@ -147,7 +148,7 @@ const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToa
     );
 };
 
-const StudentCard = ({ student, extraId, onShowToast }) => {
+const StudentCard = ({ student, extraId, onShowToast, onDelete }) => {
     const [data, setData] = useState({
         student_id: student.id,
         extra_id: extraId,
@@ -184,7 +185,8 @@ const StudentCard = ({ student, extraId, onShowToast }) => {
 
     const handleSave = () => {
         setLoading(true);
-        router.post(route('talent.update'), data, {
+        const url = typeof window !== 'undefined' && window.route ? window.route('talent.update') : '/talent/update';
+        router.post(url, data, {
             preserveScroll: true,
             onSuccess: () => {
                 setLoading(false);
@@ -251,7 +253,16 @@ const StudentCard = ({ student, extraId, onShowToast }) => {
             </div>
 
             {/* Footer Action */}
-            <div className="p-4 border-t border-gray-50 bg-gray-50/30 flex justify-end">
+            <div className="p-4 border-t border-gray-50 bg-gray-50/30 flex justify-between items-center">
+                <button 
+                    type="button"
+                    onClick={() => onDelete(student.id)}
+                    className="flex items-center gap-1 px-3 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold transition-colors"
+                    title="Keluarkan dari Ekskul"
+                >
+                    <Icons.Trash /> Hapus
+                </button>
+
                 <button 
                     onClick={handleSave}
                     disabled={loading || (!isDirty && !saved)}
@@ -283,6 +294,16 @@ export default function Coach({ auth, extra, students, availableStudents, stats 
     const showToast = (msg) => {
         setToastMsg(msg);
         setTimeout(() => setToastMsg(null), 3000);
+    };
+
+    const handleRemoveStudent = (studentId) => {
+        if(confirm('Apakah Anda yakin ingin mengeluarkan siswa ini dari ekskul?')) {
+            const url = typeof window !== 'undefined' && window.route ? window.route('pembina.removeStudent', studentId) : `/pembina/student/remove/${studentId}`;
+            router.delete(url, {
+                onSuccess: () => showToast('Siswa berhasil dikeluarkan dari ekskul.'),
+                preserveScroll: true
+            });
+        }
     };
 
     return (
@@ -363,6 +384,7 @@ export default function Coach({ auth, extra, students, availableStudents, stats 
                                     student={student} 
                                     extraId={activeExtra.id} 
                                     onShowToast={showToast}
+                                    onDelete={handleRemoveStudent}
                                 />
                             ))
                         ) : (
