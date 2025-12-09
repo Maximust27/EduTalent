@@ -4,13 +4,15 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log; // Tambahkan Log untuk debugging
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use App\Models\User;
 use App\Models\Subject;
 use App\Models\Extra;
 use App\Models\AcademicGrade;
 use App\Models\TalentGrade;
+use App\Models\Schedule;
 
 class DashboardController extends Controller
 {
@@ -67,12 +69,16 @@ class DashboardController extends Controller
             'pembina' => $users->where('role', 'pembina')->count(),
         ];
 
+        // Ambil semua jadwal untuk admin
+        $schedules = Schedule::with(['subject', 'extra', 'instructor'])->orderBy('day')->orderBy('start_time')->get();
+
         return Inertia::render('Dashboard/Admin', [
             'auth' => ['user' => $user],
             'users' => $users,
             'subjects' => Subject::all(),
             'extras' => Extra::all(),
-            'stats' => $stats
+            'stats' => $stats,
+            'schedules' => $schedules
         ]);
     }
 
@@ -80,14 +86,13 @@ class DashboardController extends Controller
     {
         $rules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|email', 
+            'email' => ['required', 'email', Rule::unique('users')->ignore($request->id)],
             'role' => 'required|in:admin,guru,pembina,siswa',
             'nomor_induk' => 'nullable|string',
         ];
 
         if (!$request->id) {
             $rules['password'] = 'required|min:6';
-            $rules['email'] .= '|unique:users,email';
         }
 
         $request->validate($rules);
@@ -127,6 +132,52 @@ class DashboardController extends Controller
         return redirect()->back()->with('success', 'Pengguna berhasil dihapus.');
     }
 
+    // --- ADMIN: SCHEDULE MANAGEMENT (YANG TADINYA HILANG/KURANG) ---
+    public function saveSchedule(Request $request)
+    {
+        // 1. Validasi Input
+        $rules = [
+            'day' => 'required|in:Senin,Selasa,Rabu,Kamis,Jumat',
+            'start_time' => 'required',
+            'end_time' => 'required',
+            'type' => 'required|in:mapel,ekskul',
+            'class_name' => 'required|string',
+            'instructor_id' => 'required|exists:users,id',
+        ];
+
+        // Validasi conditional: Mapel butuh subject_id, Ekskul butuh extra_id
+        if ($request->type === 'mapel') {
+            $rules['subject_id'] = 'required|exists:subjects,id';
+        } else {
+            $rules['extra_id'] = 'required|exists:extras,id';
+        }
+
+        $request->validate($rules);
+
+        // 2. Simpan ke Database
+        Schedule::updateOrCreate(
+            ['id' => $request->id],
+            [
+                'day' => $request->day,
+                'start_time' => $request->start_time,
+                'end_time' => $request->end_time,
+                'type' => $request->type,
+                'subject_id' => $request->type === 'mapel' ? $request->subject_id : null,
+                'extra_id' => $request->type === 'ekskul' ? $request->extra_id : null,
+                'class_name' => $request->class_name,
+                'instructor_id' => $request->instructor_id,
+            ]
+        );
+
+        return redirect()->back()->with('success', 'Jadwal berhasil disimpan!');
+    }
+
+    public function deleteSchedule($id)
+    {
+        Schedule::findOrFail($id)->delete();
+        return redirect()->back()->with('success', 'Jadwal berhasil dihapus.');
+    }
+
     // ==========================================
     // 2. LOGIKA PEMBINA (COACH)
     // ==========================================
@@ -160,9 +211,13 @@ class DashboardController extends Controller
             }
         }
 
+        // Ambil Jadwal Mengajar untuk Pembina ini
+        $mySchedules = Schedule::where('instructor_id', $user->id)->orderBy('day')->get();
+
         return Inertia::render('Dashboard/Coach', [
             'auth' => ['user' => $user], 'extra' => $myExtra,
-            'students' => $students, 'availableStudents' => $availableStudents, 'stats' => $stats
+            'students' => $students, 'availableStudents' => $availableStudents, 'stats' => $stats,
+            'schedules' => $mySchedules
         ]);
     }
 
@@ -180,15 +235,10 @@ class DashboardController extends Controller
         return redirect()->back()->with('success', 'Data tersimpan!');
     }
 
-    /**
-     * Method untuk menghapus siswa dari ekskul (Hapus TalentGrade)
-     */
     public function removeStudentFromTalent($studentId)
     {
         $user = Auth::user();
-        Log::info("Mencoba menghapus siswa ID: $studentId oleh Pembina ID: " . $user->id);
         
-        // Pastikan hanya pembina yang bisa akses
         if ($user->role !== 'pembina') {
             return redirect()->back()->with('error', 'Akses ditolak.');
         }
@@ -196,19 +246,16 @@ class DashboardController extends Controller
         $myExtra = Extra::where('coach_id', $user->id)->first();
 
         if ($myExtra) {
-            // Hapus record di TalentGrade yang menghubungkan siswa dengan ekskul ini
             $deleted = TalentGrade::where('student_id', $studentId)
                 ->where('extra_id', $myExtra->id)
                 ->delete();
             
             if ($deleted) {
                 return redirect()->back()->with('success', 'Siswa berhasil dikeluarkan dari ekskul.');
-            } else {
-                return redirect()->back()->with('error', 'Siswa tidak ditemukan di ekskul ini.');
             }
         }
 
-        return redirect()->back()->with('error', 'Ekskul tidak ditemukan.');
+        return redirect()->back()->with('error', 'Gagal menghapus siswa.');
     }
 
     // ==========================================
@@ -237,11 +284,19 @@ class DashboardController extends Controller
                 });
         }
 
+        // Ambil Jadwal Mengajar untuk Guru ini
+        $mySchedules = Schedule::where('instructor_id', $user->id)
+            ->with(['subject'])
+            ->orderBy('day')
+            ->orderBy('start_time')
+            ->get();
+
         return Inertia::render('Dashboard/Teacher', [
             'auth' => ['user' => $user], 'subjects' => $mySubjects, 'classes' => $classList,
             'students' => $students, 
             'filters' => ['kelas' => $selectedClass, 'subject_id' => $selectedSubjectId],
-            'homeroom' => 'XII MIPA 1'
+            'homeroom' => 'XII MIPA 1',
+            'schedules' => $mySchedules
         ]);
     }
 
@@ -288,9 +343,21 @@ class DashboardController extends Controller
             }
         }
 
+        $schedules = Schedule::with(['subject', 'extra', 'instructor'])
+            ->where(function($query) use ($user) {
+                $query->where('class_name', $user->kelas)
+                      ->orWhere('class_name', 'SEMUA KELAS');
+            })
+            ->orderBy('day')
+            ->orderBy('start_time')
+            ->get();
+
         return Inertia::render('Dashboard/Student', [
-            'auth' => ['user' => $user], 'academics' => $academics, 
-            'talents' => $talents, 'analysis' => $analysis
+            'auth' => ['user' => $user], 
+            'academics' => $academics, 
+            'talents' => $talents, 
+            'analysis' => $analysis,
+            'schedules' => $schedules
         ]);
     }
 }

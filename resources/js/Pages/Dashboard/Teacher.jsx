@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 
 // --- ICONS (SVG) ---
 const Icons = {
@@ -13,12 +12,13 @@ const Icons = {
     Logout: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
     Close: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
     Alert: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
-    Edit: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    Edit: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+    Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+    Clock: () => <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
 };
 
 // --- COMPONENTS ---
 
-// 1. Toast Notification
 const Toast = ({ message, isVisible, onClose }) => {
     if (!isVisible) return null;
     return (
@@ -44,7 +44,6 @@ const Toast = ({ message, isVisible, onClose }) => {
     );
 };
 
-// 2. Animated Number
 const AnimatedNumber = ({ value }) => {
     const [displayValue, setDisplayValue] = useState(0);
     useEffect(() => {
@@ -66,7 +65,6 @@ const AnimatedNumber = ({ value }) => {
 const Navbar = ({ user }) => {
     const handleLogout = (e) => {
         e.preventDefault();
-        // Menggunakan path /logout yang standar
         router.post('/logout'); 
     };
 
@@ -104,19 +102,83 @@ const Navbar = ({ user }) => {
     );
 };
 
+const TeacherSchedule = ({ schedules }) => {
+    const today = new Date().toLocaleDateString('id-ID', { weekday: 'long' });
+    const initialDay = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].includes(today) ? today : 'Senin';
+    const [activeDay, setActiveDay] = useState(initialDay);
+    const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+
+    // Filter jadwal berdasarkan hari yang dipilih
+    const daySchedules = schedules
+        .filter(s => s.day === activeDay)
+        .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+    return (
+        <div className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-xl shadow-gray-100 w-full mb-8">
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-pink-50 text-pink-600 rounded-xl"><Icons.Calendar /></div>
+                    <div>
+                        <h3 className="font-bold text-gray-800 text-lg">Jadwal Mengajar</h3>
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Mingguan</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Day Tabs */}
+            <div className="flex p-1 bg-gray-50 rounded-xl mb-4 overflow-x-auto custom-scrollbar">
+                {days.map(day => (
+                    <button
+                        key={day}
+                        onClick={() => setActiveDay(day)}
+                        className={`flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                            activeDay === day 
+                            ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' 
+                            : 'text-gray-400 hover:text-gray-600'
+                        }`}
+                    >
+                        {day}
+                    </button>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {daySchedules.length > 0 ? (
+                    daySchedules.map((item, idx) => (
+                        <div key={idx} className="flex gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:bg-white hover:border-indigo-100 hover:shadow-md transition-all group items-center">
+                            <div className="flex flex-col items-center justify-center w-12 h-12 bg-white rounded-xl border border-gray-200 text-gray-600 text-[10px] font-bold group-hover:border-indigo-200 group-hover:text-indigo-600 transition-colors shadow-sm">
+                                <span>{item.start_time.substring(0, 5)}</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-gray-800 truncate">{item.subject?.nama_mapel || 'Kegiatan'}</div>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded uppercase tracking-wide">{item.class_name}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="col-span-full flex flex-col items-center justify-center h-32 text-gray-400 border-2 border-dashed border-gray-100 rounded-2xl">
+                        <p className="text-xs font-medium">Tidak ada jadwal untuk hari {activeDay}.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const StudentRow = ({ student, subjectId, onShowToast, index }) => {
     const [data, setData] = useState({
         student_id: student.id,
         subject_id: subjectId,
-        uts: student.uts,
-        uas: student.uas,
-        catatan: student.catatan
+        uts: student.uts || 0,
+        uas: student.uas || 0,
+        catatan: student.catatan || ''
     });
     const [loading, setLoading] = useState(false);
     const [saved, setSaved] = useState(false);
     const [isDirty, setIsDirty] = useState(false); 
 
-    // FIX NYANGKUT: Reset data saat props student/subjectId berubah
     useEffect(() => {
         setData({
             student_id: student.id,
@@ -131,10 +193,10 @@ const StudentRow = ({ student, subjectId, onShowToast, index }) => {
     const finalScore = Math.round((parseInt(data.uts || 0) + parseInt(data.uas || 0)) / 2);
     
     const getStatusColor = (score) => {
-        if (score >= 90) return 'bg-green-100 text-green-700 border-green-200 ring-green-500/20';
-        if (score >= 75) return 'bg-blue-100 text-blue-700 border-blue-200 ring-blue-500/20';
-        if (score >= 60) return 'bg-yellow-100 text-yellow-700 border-yellow-200 ring-yellow-500/20';
-        return 'bg-red-100 text-red-700 border-red-200 ring-red-500/20';
+        if (score >= 90) return 'bg-green-100 text-green-700 border-green-200';
+        if (score >= 75) return 'bg-blue-100 text-blue-700 border-blue-200';
+        if (score >= 60) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        return 'bg-red-100 text-red-700 border-red-200';
     };
 
     const handleChange = (e) => {
@@ -151,11 +213,10 @@ const StudentRow = ({ student, subjectId, onShowToast, index }) => {
     const handleSave = () => {
         setLoading(true);
         // Menggunakan path /grades/update
-        const url = typeof route !== 'undefined' ? route('grades.update') : '/grades/update';
+        const url = '/grades/update';
         
         router.post(url, data, {
             preserveScroll: true,
-            // Only reload 'students' prop to keep it fast
             only: ['students', 'filters'], 
             onSuccess: () => {
                 setLoading(false);
@@ -207,7 +268,7 @@ const StudentRow = ({ student, subjectId, onShowToast, index }) => {
             </td>
             <td className="px-6 py-4">
                 <div className="relative">
-                    <input type="text" name="catatan" value={data.catatan} onChange={handleChange} placeholder="Berikan catatan personal..." className="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs py-2.5 px-3 text-gray-600 placeholder-gray-400 transition-all" />
+                    <input type="text" name="catatan" value={data.catatan} onChange={handleChange} placeholder="Berikan catatan..." className="w-full border-gray-200 bg-gray-50 focus:bg-white rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs py-2.5 px-3 text-gray-600 placeholder-gray-400 transition-all" />
                     {data.catatan && <span className="absolute right-3 top-2.5 text-indigo-400"><Icons.Edit /></span>}
                 </div>
             </td>
@@ -220,7 +281,7 @@ const StudentRow = ({ student, subjectId, onShowToast, index }) => {
     );
 };
 
-const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
+const ReportModal = ({ isOpen, onClose, students, subjectName }) => {
     if (!isOpen) return null;
 
     const stats = useMemo(() => {
@@ -249,7 +310,6 @@ const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm transition-opacity duration-300">
-            {/* FIX: Modal Size max-w-lg agar lebih kecil */}
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-scale transform transition-all">
                 <style>{`@keyframes fadeInScale { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } } .animate-fade-in-scale { animation: fadeInScale 0.3s cubic-bezier(0.16, 1, 0.3, 1); }`}</style>
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white">
@@ -275,7 +335,6 @@ const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
                     <div>
                         <div className="flex justify-between items-end mb-4">
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Distribusi Nilai</h4>
-                            <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Berdasarkan Predikat</span>
                         </div>
                         {students.length > 0 ? (
                             <div className="flex items-end gap-3 h-32 border-b border-gray-200 pb-2 px-2">
@@ -298,7 +357,7 @@ const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
                         )}
                     </div>
 
-                    {stats?.atRisk.length > 0 ? (
+                    {stats?.atRisk.length > 0 && (
                         <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4">
                             <div className="flex items-center gap-2 mb-3 text-red-700 font-bold text-xs">
                                 <div className="p-1 bg-red-100 rounded-full"><Icons.Alert /></div>
@@ -313,14 +372,6 @@ const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
                                 ))}
                             </div>
                         </div>
-                    ) : (
-                        <div className="bg-green-50/50 border border-green-100 rounded-2xl p-4 text-center flex flex-col items-center justify-center gap-2">
-                            <div className="bg-white p-2 rounded-full text-green-500 shadow-sm border border-green-100"><Icons.Star /></div>
-                            <div>
-                                <p className="text-green-800 font-bold text-xs">Target Tercapai!</p>
-                                <p className="text-green-600 text-[10px] mt-0.5">Semua siswa di atas standar minimal.</p>
-                            </div>
-                        </div>
                     )}
                 </div>
 
@@ -332,43 +383,40 @@ const ReportModal = ({ isOpen, onClose, students, subjectName, className }) => {
     );
 };
 
-export default function Teacher({ auth, subjects, classes, students, filters, homeroom }) {
-    // --- MOCK DATA (Untuk Preview & Fallback) ---
-    const mockUser = { name: "Pak Heryanto", nomor_induk: "19850101" };
-    const mockSubjects = [{ id: 1, nama_mapel: "Matematika (Wajib)" }, { id: 2, nama_mapel: "Matematika (Minat)" }];
-    const mockClasses = ["XII MIPA 1", "XII MIPA 2", "XII IPS 1"];
-    const mockStudentsMIPA = [
+export default function Teacher({ auth, subjects, classes, students, filters, homeroom, schedules }) {
+    // --- SETUP PROPS (DATA DARI DATABASE / CONTROLLER) ---
+    // Fallback data (Dummy) ditambahkan kembali agar preview tidak rusak jika props kosong
+    const dummyClasses = ["XII MIPA 1", "XII MIPA 2", "XII IPS 1"];
+    const dummySubjects = [{id: 1, nama_mapel: "Matematika (Wajib)"}, {id: 2, nama_mapel: "Fisika"}];
+    const dummyStudents = [
         { id: 1, name: "Budi Santoso", nis: "12345", uts: 85, uas: 90, catatan: "Sangat baik" },
         { id: 2, name: "Siti Aminah", nis: "12346", uts: 70, uas: 75, catatan: "Perlu bimbingan" },
-    ];
-    const mockStudentsIPS = [
         { id: 3, name: "Reza Rahadian", nis: "12347", uts: 95, uas: 98, catatan: "Luar biasa" },
         { id: 4, name: "Doni Tata", nis: "12348", uts: 60, uas: 65, catatan: "Remedial" },
     ];
     
-    // Gunakan props asli jika tersedia
-    const user = auth?.user || mockUser;
-    const activeSubjects = subjects || mockSubjects;
-    const activeClasses = classes || mockClasses;
-    // Logika Mock Sederhana untuk Preview: Ganti siswa jika kelas berubah
-    // Di mode REAL, 'students' akan otomatis berubah dari server, jadi fallback ini tidak akan terpakai jika data ada.
-    const activeStudents = students || (filters?.kelas?.includes('IPS') ? mockStudentsIPS : mockStudentsMIPA);
-    const activeFilters = filters || { kelas: "XII MIPA 1", subject_id: 1 };
-    const activeHomeroom = homeroom || "XII MIPA 1";
-    // -------------------------------------------------------------
+    const user = auth?.user || { name: 'Guru', nomor_induk: '-' };
+    // Prioritaskan props dari backend, jika kosong pakai dummy
+    const activeSubjects = subjects && subjects.length > 0 ? subjects : dummySubjects;
+    const activeClasses = classes && classes.length > 0 ? classes : dummyClasses;
+    // Khusus students: Jika di-filter via backend, gunakan students prop. Jika tidak, gunakan dummy.
+    const activeStudents = students && students.length > 0 ? students : (students ? [] : dummyStudents); 
+    const activeFilters = filters || { kelas: activeClasses[0], subject_id: activeSubjects[0]?.id };
+    const activeHomeroom = homeroom || '-';
+    const activeSchedules = schedules || [];
 
-    // --- LOCAL STATE UNTUK FILTER (AGAR TIDAK NYANGKUT) ---
+    // --- LOCAL STATE ---
     const [selectedClass, setSelectedClass] = useState(activeFilters.kelas);
     const [selectedSubject, setSelectedSubject] = useState(activeFilters.subject_id);
-    const [isTableLoading, setIsTableLoading] = useState(false); // State Loading
-
-    useEffect(() => {
-        setSelectedClass(activeFilters.kelas);
-        setSelectedSubject(activeFilters.subject_id);
-    }, [activeFilters]);
-
+    const [isTableLoading, setIsTableLoading] = useState(false); 
     const [isReportOpen, setReportOpen] = useState(false);
     const [toastMsg, setToastMsg] = useState(null);
+
+    // Sync state if props change (e.g. after refresh)
+    useEffect(() => {
+        if(filters?.kelas) setSelectedClass(filters.kelas);
+        if(filters?.subject_id) setSelectedSubject(filters.subject_id);
+    }, [filters]);
 
     const calculateAverage = useMemo(() => {
         if (!activeStudents.length) return 0;
@@ -389,23 +437,32 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
     const handleClassChange = (e) => {
         const newValue = e.target.value;
         setSelectedClass(newValue); 
+        
+        // Cek apakah kita di lingkungan Laravel atau Preview
         const url = typeof route !== 'undefined' ? '/dashboard' : '/dashboard';
         
+        // Panggil router Inertia
         router.get(url, 
             { ...activeFilters, kelas: newValue, subject_id: selectedSubject }, 
             { 
                 preserveState: true, 
                 preserveScroll: true,
-                only: ['students', 'filters', 'homeroom'], // PARTIAL RELOAD (Lebih Cepat)
+                only: ['students', 'filters', 'homeroom'], 
                 onStart: () => setIsTableLoading(true),
                 onFinish: () => setIsTableLoading(false)
             }
         );
+        
+        // SIMULASI PREVIEW: Jika di preview (tanpa backend), paksa loading stop manual
+        if (typeof route === 'undefined') {
+             setTimeout(() => setIsTableLoading(false), 500); 
+        }
     };
 
     const handleSubjectChange = (e) => {
         const newValue = e.target.value;
         setSelectedSubject(newValue); 
+        
         const url = typeof route !== 'undefined' ? '/dashboard' : '/dashboard';
         
         router.get(url, 
@@ -418,6 +475,10 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                 onFinish: () => setIsTableLoading(false)
             }
         );
+
+        if (typeof route === 'undefined') {
+             setTimeout(() => setIsTableLoading(false), 500); 
+        }
     };
 
     const handlePrint = () => window.print();
@@ -439,19 +500,19 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                 onClose={() => setReportOpen(false)}
                 students={activeStudents}
                 subjectName={activeSubjects.find(s => s.id == selectedSubject)?.nama_mapel || 'Mapel'}
-                className={selectedClass}
             />
 
             <div className="py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8 animate-fade-in-up">
                 <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.6s ease-out forwards; }`}</style>
                 
-                {/* 1. HERO SECTION */}
+                {/* 1. HERO SECTION & STATS */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:hidden">
+                    {/* Welcome Card */}
                     <div className="md:col-span-2 bg-white rounded-3xl p-8 border border-gray-100 shadow-xl shadow-gray-200/50 flex flex-col justify-between relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full blur-3xl -mr-16 -mt-16 transition-transform duration-700 group-hover:scale-110"></div>
                         <div className="relative z-10">
                             <h2 className="text-3xl font-black text-gray-800 mb-2">Halo, {user.name.split(' ')[0]}! 👋</h2>
-                            <p className="text-gray-500 max-w-md mb-6">Anda memiliki tanggung jawab sebagai <strong>Wali Kelas {homeroom}</strong>. Pastikan data nilai siswa terupdate sebelum tanggal 25.</p>
+                            <p className="text-gray-500 max-w-md mb-6">Anda memiliki tanggung jawab sebagai <strong>Wali Kelas {activeHomeroom}</strong>. Pastikan data nilai siswa terupdate sebelum tanggal 25.</p>
                             <div className="flex gap-3">
                                 <button onClick={() => setReportOpen(true)} className="px-5 py-2.5 bg-gray-900 text-white text-xs font-bold rounded-xl shadow-lg shadow-gray-900/20 hover:-translate-y-0.5 transition-transform flex items-center gap-2 active:scale-95"><Icons.Chart /> Lihat Laporan</button>
                                 <button onClick={handlePrint} className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 active:scale-95"><Icons.Print /> Cetak Rekap</button>
@@ -459,6 +520,7 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                         </div>
                     </div>
 
+                    {/* Stats Card */}
                     <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-xl shadow-blue-500/30 flex flex-col justify-between relative overflow-hidden group">
                         <div className="absolute bottom-0 left-0 w-40 h-40 bg-white/10 rounded-full blur-2xl -ml-10 -mb-10 animate-pulse"></div>
                         <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500 rounded-full blur-xl opacity-0 group-hover:opacity-50 transition-opacity duration-700"></div>
@@ -484,77 +546,94 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                     </div>
                 </div>
 
-                {/* 2. MAIN WORKSPACE (WITH LOADING STATE) */}
-                <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-200 overflow-hidden relative">
-                    {/* LOADING OVERLAY */}
-                    {isTableLoading && (
-                        <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-100 border-t-indigo-600 shadow-xl"></div>
-                        </div>
-                    )}
-
-                    <div className="p-6 md:p-8 border-b border-gray-100 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6 print:hidden">
-                        <div>
-                            <h3 className="text-xl font-bold text-gray-800">Input Nilai Akademik</h3>
-                            <p className="text-sm text-gray-500 mt-1">Pilih kelas dan mata pelajaran untuk mulai menilai.</p>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <div className="relative">
-                                <select value={selectedClass} onChange={handleClassChange} className="appearance-none bg-white border border-gray-200 text-gray-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 shadow-sm w-full md:w-40 transition-all cursor-pointer hover:border-indigo-300">
-                                    {classes.map(cls => <option key={cls} value={cls}>{cls}</option>)}
-                                </select>
-                                <div className="absolute right-3 top-3.5 pointer-events-none text-gray-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg></div>
-                            </div>
-
-                            <div className="relative">
-                                <select value={selectedSubject} onChange={handleSubjectChange} className="appearance-none bg-white border border-gray-200 text-gray-700 py-3 pl-4 pr-10 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 shadow-sm w-full md:w-64 transition-all cursor-pointer hover:border-indigo-300">
-                                    {subjects.map(sub => <option key={sub.id} value={sub.id}>{sub.nama_mapel}</option>)}
-                                </select>
-                                <div className="absolute right-3 top-3.5 pointer-events-none text-gray-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="overflow-x-auto min-h-[300px]">
-                        <table className="min-w-full text-left">
-                            <thead>
-                                <tr className="bg-white border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 font-bold">
-                                    <th className="px-6 py-4">Informasi Siswa</th>
-                                    <th className="px-6 py-4 text-center w-24">UTS (40%)</th>
-                                    <th className="px-6 py-4 text-center w-24">UAS (60%)</th>
-                                    <th className="px-6 py-4 text-center w-24">Akhir</th>
-                                    <th className="px-6 py-4">Catatan Personal</th>
-                                    <th className="px-6 py-4 text-right print:hidden">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {students.length > 0 ? (
-                                    students.map((student, index) => (
-                                        <StudentRow key={student.id} index={index} student={student} subjectId={selectedSubject} onShowToast={showToast} />
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan="6" className="px-6 py-12 text-center">
-                                            <div className="flex flex-col items-center justify-center text-gray-400">
-                                                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 border border-gray-100"><Icons.Users /></div>
-                                                <p className="text-sm font-bold text-gray-600">Tidak ada siswa ditemukan.</p>
-                                                <p className="text-xs mt-1">Coba pilih kelas lain.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                {/* 2. MAIN LAYOUT: SCHEDULE (TOP) & GRADING (BOTTOM) */}
+                <div className="flex flex-col gap-8">
                     
-                    <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-between items-center print:hidden">
-                        <p className="text-xs text-gray-500 font-medium bg-white px-3 py-1 rounded-lg border border-gray-200 shadow-sm">
-                            Menampilkan <span className="font-bold text-gray-800">{students.length}</span> siswa di kelas {selectedClass}
-                        </p>
+                    {/* TOP SECTION: TEACHER SCHEDULE */}
+                    <div className="w-full">
+                        <TeacherSchedule schedules={activeSchedules} />
+                    </div>
+
+                    {/* BOTTOM SECTION: GRADING TABLE */}
+                    <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-200 overflow-hidden relative flex flex-col">
+                        {/* LOADING OVERLAY */}
+                        {isTableLoading && (
+                            <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-100 border-t-indigo-600 shadow-xl"></div>
+                            </div>
+                        )}
+
+                        <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-800">Input Nilai Akademik</h3>
+                                <p className="text-sm text-gray-500 mt-1">Pilih kelas dan mata pelajaran.</p>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                {/* Class Filter */}
+                                <div className="relative">
+                                    <select value={selectedClass} onChange={handleClassChange} className="appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 shadow-sm w-full md:w-36 transition-all cursor-pointer hover:border-indigo-300">
+                                        {activeClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                                    </select>
+                                    <div className="absolute right-3 top-3 pointer-events-none text-gray-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg></div>
+                                </div>
+
+                                {/* Subject Filter */}
+                                <div className="relative">
+                                    <select value={selectedSubject} onChange={handleSubjectChange} className="appearance-none bg-white border border-gray-200 text-gray-700 py-2.5 pl-4 pr-10 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 shadow-sm w-full md:w-56 transition-all cursor-pointer hover:border-indigo-300">
+                                        {activeSubjects.map(sub => <option key={sub.id} value={sub.id}>{sub.nama_mapel}</option>)}
+                                    </select>
+                                    <div className="absolute right-3 top-3 pointer-events-none text-gray-400"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto flex-1">
+                            <table className="min-w-full text-left">
+                                <thead>
+                                    <tr className="bg-white border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 font-bold">
+                                        <th className="px-6 py-4">Siswa</th>
+                                        <th className="px-6 py-4 text-center w-20">UTS</th>
+                                        <th className="px-6 py-4 text-center w-20">UAS</th>
+                                        <th className="px-6 py-4 text-center w-20">Akhir</th>
+                                        <th className="px-6 py-4">Catatan</th>
+                                        <th className="px-6 py-4 text-right print:hidden">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {activeStudents.length > 0 ? (
+                                        activeStudents.map((student, index) => (
+                                            <StudentRow key={student.id} index={index} student={student} subjectId={selectedSubject} onShowToast={showToast} />
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="6" className="px-6 py-12 text-center">
+                                                <div className="flex flex-col items-center justify-center text-gray-400">
+                                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 border border-gray-100"><Icons.Users /></div>
+                                                    <p className="text-sm font-bold text-gray-600">Tidak ada siswa ditemukan.</p>
+                                                    <p className="text-xs mt-1">Coba pilih kelas lain.</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center print:hidden">
+                            <p className="text-xs text-gray-500 font-medium bg-white px-3 py-1 rounded-lg border border-gray-200 shadow-sm">
+                                Total: <span className="font-bold text-gray-800">{activeStudents.length}</span> siswa
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
+            <style>{`
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #e5e7eb; border-radius: 20px; }
+                .custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: #d1d5db; }
+            `}</style>
         </div>
     );
 }

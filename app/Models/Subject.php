@@ -8,11 +8,27 @@ use Illuminate\Database\Eloquent\Model;
 class Subject extends Model
 {
     use HasFactory;
-    protected $guarded = []; // Agar bisa diisi semua kolom
 
-    // Relasi: Mapel dimiliki oleh Guru
+    protected $fillable = [
+        'nama_mapel',
+        'teacher_id'
+    ];
+
+    // Relasi ke Guru Pengampu
     public function teacher()
     {
         return $this->belongsTo(User::class, 'teacher_id');
+    }
+
+    // Relasi ke Nilai Siswa
+    public function academicGrades()
+    {
+        return $this->hasMany(AcademicGrade::class);
+    }
+
+    // Relasi ke Jadwal
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class);
     }
 }

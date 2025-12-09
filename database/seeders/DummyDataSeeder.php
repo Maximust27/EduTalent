@@ -8,6 +8,7 @@ use App\Models\Subject;
 use App\Models\Extra;
 use App\Models\AcademicGrade;
 use App\Models\TalentGrade;
+use App\Models\Schedule;
 use Illuminate\Support\Facades\Hash;
 
 class DummyDataSeeder extends Seeder
@@ -15,10 +16,22 @@ class DummyDataSeeder extends Seeder
     public function run(): void
     {
         // ==========================================
-        // 1. BUAT AKUN GURU (TEACHERS)
+        // 1. BUAT AKUN SUPER ADMIN
+        // ==========================================
+        User::create([
+            'name' => 'Super Administrator',
+            'email' => 'admin@edutalent.com',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+            'nomor_induk' => 'ADM001',
+            'kelas' => null
+        ]);
+
+        // ==========================================
+        // 2. BUAT AKUN GURU & PEMBINA
         // ==========================================
         
-        // Guru Matematika (Mengajar MIPA & IPS)
+        // Guru Matematika
         $guruMtk = User::create([
             'name' => 'Pak Heryanto (Guru MTK)',
             'email' => 'guru.mtk@edutalent.com',
@@ -27,13 +40,22 @@ class DummyDataSeeder extends Seeder
             'nomor_induk' => 'GURU001'
         ]);
 
-        // Guru Bahasa (Mengajar MIPA & IPS)
+        // Guru Bahasa
         $guruBahasa = User::create([
             'name' => 'Ibu Ratna (Guru Bahasa)',
             'email' => 'guru.bahasa@edutalent.com',
             'password' => Hash::make('password'),
             'role' => 'guru',
             'nomor_induk' => 'GURU002'
+        ]);
+
+        // Guru IPA (Fisika/Kimia/Biologi)
+        $guruIpa = User::create([
+            'name' => 'Bu Susi (Guru IPA)',
+            'email' => 'guru.ipa@edutalent.com',
+            'password' => Hash::make('password'),
+            'role' => 'guru',
+            'nomor_induk' => 'GURU003'
         ]);
 
         // Pembina Basket
@@ -45,24 +67,25 @@ class DummyDataSeeder extends Seeder
             'nomor_induk' => 'COACH001'
         ]);
 
+        // Pembina Robotik (Pak Heryanto juga bisa jadi pembina)
+        // Kita pakai Pak Heryanto yang sudah ada
+
         // ==========================================
-        // 2. BUAT MATA PELAJARAN & EKSKUL (SUBJECTS)
+        // 3. BUAT MATA PELAJARAN & EKSKUL
         // ==========================================
 
-        // Mapel diampu Pak Heryanto
-        $mtkWajib = Subject::create(['nama_mapel' => 'Matematika (Wajib)', 'teacher_id' => $guruMtk->id]);
-        $mtkMinat = Subject::create(['nama_mapel' => 'Matematika (Peminatan)', 'teacher_id' => $guruMtk->id]);
+        $mtk = Subject::create(['nama_mapel' => 'Matematika', 'teacher_id' => $guruMtk->id]);
+        $bindo = Subject::create(['nama_mapel' => 'Bahasa Indonesia', 'teacher_id' => $guruBahasa->id]);
+        $bing = Subject::create(['nama_mapel' => 'Bahasa Inggris', 'teacher_id' => $guruBahasa->id]);
+        $fisika = Subject::create(['nama_mapel' => 'Fisika', 'teacher_id' => $guruIpa->id]);
+        $biologi = Subject::create(['nama_mapel' => 'Biologi', 'teacher_id' => $guruIpa->id]);
+        $kimia = Subject::create(['nama_mapel' => 'Kimia', 'teacher_id' => $guruIpa->id]);
 
-        // Mapel diampu Ibu Ratna
-        $bIndo = Subject::create(['nama_mapel' => 'Bahasa Indonesia', 'teacher_id' => $guruBahasa->id]);
-        $bInggris = Subject::create(['nama_mapel' => 'Bahasa Inggris', 'teacher_id' => $guruBahasa->id]);
-
-        // Ekskul
         $basket = Extra::create(['nama_ekskul' => 'Basket', 'coach_id' => $coachBasket->id]);
-        $robotik = Extra::create(['nama_ekskul' => 'Robotik', 'coach_id' => $guruMtk->id]); // Pak Heryanto juga pembina robotik
+        $robotik = Extra::create(['nama_ekskul' => 'Robotik', 'coach_id' => $guruMtk->id]);
 
         // ==========================================
-        // 3. BUAT SISWA (STUDENTS) - BEDA KELAS
+        // 4. BUAT SISWA (STUDENTS)
         // ==========================================
 
         // KELAS XII MIPA 1
@@ -94,49 +117,43 @@ class DummyDataSeeder extends Seeder
             'nomor_induk' => 'S003'
         ]);
 
-        $ayu = User::create([
-            'name' => 'Ayu Tingting',
-            'email' => 'ayu@edutalent.com',
-            'password' => Hash::make('password'),
-            'role' => 'siswa',
-            'kelas' => 'XII IPS 1',
-            'nomor_induk' => 'S004'
-        ]);
-
         // ==========================================
-        // 4. INPUT NILAI (MENGHUBUNGKAN MEREKA)
+        // 5. INPUT NILAI (GRADES)
         // ==========================================
 
-        // --- NILAI MATEMATIKA WAJIB (Pak Heryanto menilai MIPA & IPS) ---
-        
-        // Budi (MIPA) - Pintar MTK
-        AcademicGrade::create(['student_id' => $budi->id, 'subject_id' => $mtkWajib->id, 'uts' => 90, 'uas' => 95, 'catatan_guru' => 'Sangat berbakat di logika.']);
-        
-        // Siti (MIPA) - Rata-rata
-        AcademicGrade::create(['student_id' => $siti->id, 'subject_id' => $mtkWajib->id, 'uts' => 75, 'uas' => 78, 'catatan_guru' => 'Tingkatkan ketelitian hitungan.']);
+        // Nilai Budi
+        AcademicGrade::create(['student_id' => $budi->id, 'subject_id' => $mtk->id, 'uts' => 90, 'uas' => 95, 'catatan_guru' => 'Sangat berbakat di logika.']);
+        AcademicGrade::create(['student_id' => $budi->id, 'subject_id' => $bindo->id, 'uts' => 80, 'uas' => 82, 'catatan_guru' => 'Cukup baik.']);
+        TalentGrade::create(['student_id' => $budi->id, 'extra_id' => $basket->id, 'nilai_teknis' => 92, 'observasi_bakat' => 'Kapten Tim.', 'rekomendasi' => 'Lanjut profesional.']);
 
-        // Reza (IPS) - Kurang di MTK
-        AcademicGrade::create(['student_id' => $reza->id, 'subject_id' => $mtkWajib->id, 'uts' => 60, 'uas' => 65, 'catatan_guru' => 'Perlu remedial bab fungsi.']);
+        // Nilai Siti
+        AcademicGrade::create(['student_id' => $siti->id, 'subject_id' => $mtk->id, 'uts' => 75, 'uas' => 78, 'catatan_guru' => 'Tingkatkan ketelitian.']);
+        TalentGrade::create(['student_id' => $siti->id, 'extra_id' => $robotik->id, 'nilai_teknis' => 88, 'observasi_bakat' => 'Logika programming kuat.', 'rekomendasi' => 'Ikut olimpiade.']);
 
-        // Ayu (IPS) - Lumayan
-        AcademicGrade::create(['student_id' => $ayu->id, 'subject_id' => $mtkWajib->id, 'uts' => 80, 'uas' => 82, 'catatan_guru' => 'Rajin mengerjakan tugas.']);
+        // ==========================================
+        // 6. JADWAL PELAJARAN (FULL DAY SCHOOL)
+        // ==========================================
+        // Jadwal untuk Kelas XII MIPA 1
 
+        // SENIN
+        Schedule::create(['day' => 'Senin', 'start_time' => '07:00', 'end_time' => '07:45', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruMtk->id, 'subject_id' => null]); // Upacara (Guru MTK Wali Kelas)
+        Schedule::create(['day' => 'Senin', 'start_time' => '07:45', 'end_time' => '10:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruMtk->id, 'subject_id' => $mtk->id]);
+        Schedule::create(['day' => 'Senin', 'start_time' => '10:00', 'end_time' => '10:30', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruMtk->id, 'subject_id' => null]); // Istirahat (Logic di frontend handle null subject sebagai istirahat jika mau, atau buat dummy subject 'Istirahat')
+        Schedule::create(['day' => 'Senin', 'start_time' => '10:30', 'end_time' => '12:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruBahasa->id, 'subject_id' => $bindo->id]);
+        Schedule::create(['day' => 'Senin', 'start_time' => '13:00', 'end_time' => '15:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruIpa->id, 'subject_id' => $fisika->id]);
 
-        // --- NILAI BAHASA INDONESIA (Ibu Ratna menilai MIPA & IPS) ---
+        // SELASA
+        Schedule::create(['day' => 'Selasa', 'start_time' => '07:00', 'end_time' => '09:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruIpa->id, 'subject_id' => $biologi->id]);
+        Schedule::create(['day' => 'Selasa', 'start_time' => '09:00', 'end_time' => '11:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruIpa->id, 'subject_id' => $kimia->id]);
+        Schedule::create(['day' => 'Selasa', 'start_time' => '11:30', 'end_time' => '13:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruBahasa->id, 'subject_id' => $bing->id]);
+        // Ekskul Sore Selasa
+        Schedule::create(['day' => 'Selasa', 'start_time' => '15:30', 'end_time' => '17:30', 'type' => 'ekskul', 'class_name' => 'SEMUA KELAS', 'instructor_id' => $coachBasket->id, 'extra_id' => $basket->id]);
 
-        // Budi (MIPA)
-        AcademicGrade::create(['student_id' => $budi->id, 'subject_id' => $bIndo->id, 'uts' => 80, 'uas' => 82, 'catatan_guru' => 'Penulisan esai cukup baik.']);
-        
-        // Reza (IPS) - Jago Bahasa
-        AcademicGrade::create(['student_id' => $reza->id, 'subject_id' => $bIndo->id, 'uts' => 95, 'uas' => 98, 'catatan_guru' => 'Sangat puitis dan kritis.']);
+        // RABU
+        Schedule::create(['day' => 'Rabu', 'start_time' => '07:00', 'end_time' => '09:00', 'type' => 'mapel', 'class_name' => 'XII MIPA 1', 'instructor_id' => $guruMtk->id, 'subject_id' => $mtk->id]);
+        // ... dst
 
-
-        // --- NILAI BAKAT (EKSTRAKURIKULER) ---
-
-        // Budi ikut Basket
-        TalentGrade::create(['student_id' => $budi->id, 'extra_id' => $basket->id, 'nilai_teknis' => 92, 'observasi_bakat' => 'Kapten Tim yang solid.', 'rekomendasi' => 'Lanjut DBL.']);
-
-        // Siti ikut Robotik
-        TalentGrade::create(['student_id' => $siti->id, 'extra_id' => $robotik->id, 'nilai_teknis' => 85, 'observasi_bakat' => 'Tekun merakit.', 'rekomendasi' => 'Ikut lomba regional.']);
+        // JUMAT (Ekskul Robotik)
+        Schedule::create(['day' => 'Jumat', 'start_time' => '13:00', 'end_time' => '15:00', 'type' => 'ekskul', 'class_name' => 'SEMUA KELAS', 'instructor_id' => $guruMtk->id, 'extra_id' => $robotik->id]);
     }
 }

@@ -8,11 +8,27 @@ use Illuminate\Database\Eloquent\Model;
 class Extra extends Model
 {
     use HasFactory;
-    protected $guarded = [];
 
-    // Relasi: Ekskul dibina oleh Pembina
+    protected $fillable = [
+        'nama_ekskul',
+        'coach_id'
+    ];
+
+    // Relasi ke Pembina
     public function coach()
     {
         return $this->belongsTo(User::class, 'coach_id');
+    }
+
+    // Relasi ke Nilai Bakat Siswa
+    public function talentGrades()
+    {
+        return $this->hasMany(TalentGrade::class);
+    }
+
+    // Relasi ke Jadwal
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class);
     }
 }
