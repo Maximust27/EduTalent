@@ -42,52 +42,59 @@ class DashboardController extends Controller
     // ==========================================
     private function adminDashboard($user)
     {
-        // Ambil data user
-        $users = User::orderBy('created_at', 'desc')->get()->map(function($u) {
-            $subject = Subject::where('teacher_id', $u->id)->first();
-            $extra = Extra::where('coach_id', $u->id)->first();
+        // Fix N+1 Query: Pre-load subjects & extras, keyed by teacher_id/coach_id
+        $subjectsByTeacher = Subject::whereNotNull('teacher_id')->get()->keyBy('teacher_id');
+        $extrasByCoach = Extra::whereNotNull('coach_id')->get()->keyBy('coach_id');
+
+        $users = User::orderBy('created_at', 'desc')->get()->map(function($u) use ($subjectsByTeacher, $extrasByCoach) {
+            $subject = $subjectsByTeacher->get($u->id);
+            $extra   = $extrasByCoach->get($u->id);
 
             return [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
+                'id'          => $u->id,
+                'name'        => $u->name,
+                'email'       => $u->email,
+                'role'        => $u->role,
                 'nomor_induk' => $u->nomor_induk,
-                'kelas' => $u->kelas,
-                'mapel_ajar' => $subject ? $subject->nama_mapel : '-',
+                'kelas'       => $u->kelas,
+                'mapel_ajar'  => $subject ? $subject->nama_mapel : '-',
                 'ekskul_bina' => $extra ? $extra->nama_ekskul : '-',
-                // Data ID untuk form edit
-                'subject_id' => $subject ? $subject->id : '',
-                'extra_id' => $extra ? $extra->id : '',
+                'subject_id'  => $subject ? $subject->id : '',
+                'extra_id'    => $extra ? $extra->id : '',
             ];
         });
 
         $stats = [
             'total_user' => $users->count(),
-            'guru' => $users->where('role', 'guru')->count(),
-            'siswa' => $users->where('role', 'siswa')->count(),
-            'pembina' => $users->where('role', 'pembina')->count(),
+            'guru'       => $users->where('role', 'guru')->count(),
+            'siswa'      => $users->where('role', 'siswa')->count(),
+            'pembina'    => $users->where('role', 'pembina')->count(),
         ];
 
         // Ambil semua jadwal untuk admin
         $schedules = Schedule::with(['subject', 'extra', 'instructor'])->orderBy('day')->orderBy('start_time')->get();
 
         return Inertia::render('Dashboard/Admin', [
-            'auth' => ['user' => $user],
-            'users' => $users,
-            'subjects' => Subject::all(),
-            'extras' => Extra::all(),
-            'stats' => $stats,
+            'auth'      => ['user' => $user],
+            'users'     => $users,
+            'subjects'  => Subject::all(),
+            'extras'    => Extra::all(),
+            'stats'     => $stats,
             'schedules' => $schedules
         ]);
     }
 
     public function saveUser(Request $request)
     {
+        // [SECURITY] Hanya admin yang boleh menyimpan data user
+        if (Auth::user()->role !== 'admin') {
+            abort(403, 'Akses ditolak. Hanya admin yang dapat mengelola pengguna.');
+        }
+
         $rules = [
-            'name' => 'required|string|max:255',
-            'email' => ['required', 'email', Rule::unique('users')->ignore($request->id)],
-            'role' => 'required|in:admin,guru,pembina,siswa',
+            'name'        => 'required|string|max:255',
+            'email'       => ['required', 'email', Rule::unique('users')->ignore($request->id)],
+            'role'        => 'required|in:admin,guru,pembina,siswa',
             'nomor_induk' => 'nullable|string',
         ];
 
@@ -98,11 +105,11 @@ class DashboardController extends Controller
         $request->validate($rules);
 
         $userData = [
-            'name' => $request->name,
-            'email' => $request->email,
-            'role' => $request->role,
+            'name'        => $request->name,
+            'email'       => $request->email,
+            'role'        => $request->role,
             'nomor_induk' => $request->nomor_induk,
-            'kelas' => ($request->role === 'siswa') ? $request->kelas : null,
+            'kelas'       => ($request->role === 'siswa') ? $request->kelas : null,
         ];
 
         if ($request->filled('password')) {
@@ -127,6 +134,11 @@ class DashboardController extends Controller
 
     public function deleteUser($id)
     {
+        // [SECURITY] Hanya admin yang boleh menghapus user
+        if (Auth::user()->role !== 'admin') {
+            abort(403, 'Akses ditolak. Hanya admin yang dapat menghapus pengguna.');
+        }
+
         if ($id == Auth::id()) return redirect()->back()->with('error', 'Tidak bisa hapus akun sendiri!');
         User::findOrFail($id)->delete();
         return redirect()->back()->with('success', 'Pengguna berhasil dihapus.');
@@ -135,13 +147,18 @@ class DashboardController extends Controller
     // --- ADMIN: SCHEDULE MANAGEMENT (YANG TADINYA HILANG/KURANG) ---
     public function saveSchedule(Request $request)
     {
+        // [SECURITY] Hanya admin yang boleh mengelola jadwal
+        if (Auth::user()->role !== 'admin') {
+            abort(403, 'Akses ditolak. Hanya admin yang dapat mengelola jadwal.');
+        }
+
         // 1. Validasi Input
         $rules = [
-            'day' => 'required|in:Senin,Selasa,Rabu,Kamis,Jumat',
-            'start_time' => 'required',
-            'end_time' => 'required',
-            'type' => 'required|in:mapel,ekskul',
-            'class_name' => 'required|string',
+            'day'           => 'required|in:Senin,Selasa,Rabu,Kamis,Jumat',
+            'start_time'    => 'required|date_format:H:i',
+            'end_time'      => 'required|date_format:H:i|after:start_time',
+            'type'          => 'required|in:mapel,ekskul',
+            'class_name'    => 'required|string',
             'instructor_id' => 'required|exists:users,id',
         ];
 
@@ -158,13 +175,13 @@ class DashboardController extends Controller
         Schedule::updateOrCreate(
             ['id' => $request->id],
             [
-                'day' => $request->day,
-                'start_time' => $request->start_time,
-                'end_time' => $request->end_time,
-                'type' => $request->type,
-                'subject_id' => $request->type === 'mapel' ? $request->subject_id : null,
-                'extra_id' => $request->type === 'ekskul' ? $request->extra_id : null,
-                'class_name' => $request->class_name,
+                'day'           => $request->day,
+                'start_time'    => $request->start_time,
+                'end_time'      => $request->end_time,
+                'type'          => $request->type,
+                'subject_id'    => $request->type === 'mapel' ? $request->subject_id : null,
+                'extra_id'      => $request->type === 'ekskul' ? $request->extra_id : null,
+                'class_name'    => $request->class_name,
                 'instructor_id' => $request->instructor_id,
             ]
         );
@@ -174,6 +191,11 @@ class DashboardController extends Controller
 
     public function deleteSchedule($id)
     {
+        // [SECURITY] Hanya admin yang boleh menghapus jadwal
+        if (Auth::user()->role !== 'admin') {
+            abort(403, 'Akses ditolak. Hanya admin yang dapat menghapus jadwal.');
+        }
+
         Schedule::findOrFail($id)->delete();
         return redirect()->back()->with('success', 'Jadwal berhasil dihapus.');
     }
@@ -223,9 +245,14 @@ class DashboardController extends Controller
 
     public function updateTalent(Request $request)
     {
+        // [SECURITY] Hanya pembina yang boleh update nilai ekskul
+        if (Auth::user()->role !== 'pembina') {
+            abort(403, 'Akses ditolak. Hanya pembina yang dapat memperbarui nilai bakat.');
+        }
+
         $val = $request->validate([
-            'student_id' => 'required|exists:users,id', 'extra_id' => 'required|exists:extras,id',
-            'nilai_teknis' => 'required|numeric', 'observasi' => 'nullable', 'rekomendasi' => 'nullable'
+            'student_id'  => 'required|exists:users,id', 'extra_id' => 'required|exists:extras,id',
+            'nilai_teknis' => 'required|numeric|min:0|max:100', 'observasi' => 'nullable', 'rekomendasi' => 'nullable'
         ]);
         
         TalentGrade::updateOrCreate(
@@ -302,9 +329,14 @@ class DashboardController extends Controller
 
     public function updateGrade(Request $request)
     {
+        // [SECURITY] Hanya guru yang boleh update nilai akademik
+        if (Auth::user()->role !== 'guru') {
+            abort(403, 'Akses ditolak. Hanya guru yang dapat memperbarui nilai akademik.');
+        }
+
         $val = $request->validate([
             'student_id' => 'required', 'subject_id' => 'required',
-            'uts' => 'required|numeric', 'uas' => 'required|numeric', 'catatan' => 'nullable'
+            'uts' => 'required|numeric|min:0|max:100', 'uas' => 'required|numeric|min:0|max:100', 'catatan' => 'nullable'
         ]);
         
         AcademicGrade::updateOrCreate(

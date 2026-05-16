@@ -150,10 +150,28 @@ const CoachSchedule = ({ schedules }) => {
 
 // Modal Tambah Anggota Baru
 const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToast }) => {
+    const [selectedClass, setSelectedClass] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudent, setSelectedStudent] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // Dapatkan daftar kelas unik dari siswa yang tersedia
+    const classList = [...new Set(availableStudents.map(s => s.kelas))].sort();
+
+    // Filter siswa berdasarkan kelas DAN pencarian nama
+    const filteredStudents = availableStudents.filter(s => {
+        const matchesClass = selectedClass ? s.kelas === selectedClass : true;
+        const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesClass && matchesSearch;
+    });
+
     if (!isOpen) return null;
+
+    const handleClassChange = (e) => {
+        setSelectedClass(e.target.value);
+        setSelectedStudent(''); 
+        setSearchQuery(''); // Reset pencarian saat ganti kelas
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -165,7 +183,7 @@ const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToa
         router.post(url, {
             student_id: selectedStudent,
             extra_id: extraId,
-            nilai_teknis: 0, // Nilai awal 0
+            nilai_teknis: 0,
             observasi: 'Anggota baru.',
             rekomendasi: 'Perlu adaptasi.'
         }, {
@@ -173,6 +191,8 @@ const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToa
                 setLoading(false);
                 onClose();
                 setSelectedStudent('');
+                setSelectedClass('');
+                setSearchQuery('');
                 onShowToast("Anggota berhasil ditambahkan!");
             },
             onError: () => setLoading(false)
@@ -187,28 +207,63 @@ const AddMemberModal = ({ isOpen, onClose, availableStudents, extraId, onShowToa
                     <button onClick={onClose} className="text-gray-400 hover:text-red-500"><Icons.Close /></button>
                 </div>
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {/* Filter Kelas */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Pilih Siswa</label>
+                        <label className="block text-xs font-bold text-gray-800 uppercase tracking-widest mb-2">1. Pilih Kelas</label>
                         <select 
-                            className="w-full border-gray-300 rounded-xl shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm"
-                            value={selectedStudent}
-                            onChange={(e) => setSelectedStudent(e.target.value)}
-                            required
+                            className="w-full border-gray-200 rounded-xl shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm"
+                            value={selectedClass}
+                            onChange={handleClassChange}
                         >
-                            <option value="">-- Pilih Siswa --</option>
-                            {availableStudents.map(s => (
-                                <option key={s.id} value={s.id}>{s.name} ({s.kelas})</option>
+                            <option value="">Semua Kelas</option>
+                            {classList.map(c => (
+                                <option key={c} value={c}>{c}</option>
                             ))}
                         </select>
-                        <p className="text-xs text-gray-400 mt-2">Hanya menampilkan siswa yang belum terdaftar di ekskul ini.</p>
                     </div>
+
+                    {/* Cari & Pilih Siswa */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-800 uppercase tracking-widest mb-2">2. Cari & Pilih Siswa</label>
+                        <div className="space-y-2">
+                            <input 
+                                type="text"
+                                placeholder="Ketik nama untuk mencari..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full border-gray-200 rounded-xl shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm px-4 py-2 bg-gray-50 focus:bg-white transition-all"
+                            />
+                            <select 
+                                className="w-full border-gray-200 rounded-xl shadow-sm focus:ring-orange-500 focus:border-orange-500 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                                value={selectedStudent}
+                                onChange={(e) => setSelectedStudent(e.target.value)}
+                                size={filteredStudents.length > 0 ? 5 : 1}
+                                required
+                            >
+                                <option value="" disabled className="text-gray-900 italic py-1">-- Klik nama di bawah untuk memilih --</option>
+                                {filteredStudents.map(s => (
+                                    <option key={s.id} value={s.id} className="py-2 px-2 hover:bg-orange-50">{s.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        {filteredStudents.length === 0 && (
+                            <p className="text-[10px] text-red-500 mt-2 font-bold italic">
+                                {searchQuery ? `Tidak ada nama "${searchQuery}" di ${selectedClass || 'semua kelas'}.` : 'Tidak ada siswa tersedia.'}
+                            </p>
+                        )}
+                        {filteredStudents.length > 0 && (
+                            <p className="text-[10px] text-gray-400 mt-2">Ditemukan {filteredStudents.length} siswa.</p>
+                        )}
+                    </div>
+
                     <div className="flex justify-end pt-2">
                         <button 
                             type="submit" 
                             disabled={loading || !selectedStudent}
-                            className={`px-5 py-2.5 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-500/30 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`px-5 py-2.5 bg-orange-500 text-white text-sm font-bold rounded-xl hover:bg-orange-600 transition shadow-lg shadow-orange-500/30 ${loading || !selectedStudent ? 'opacity-50 cursor-not-allowed shadow-none' : ''}`}
                         >
-                            {loading ? 'Menyimpan...' : '+ Tambahkan'}
+                            {loading ? 'Menyimpan...' : '+ Tambahkan ke Tim'}
                         </button>
                     </div>
                 </form>

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, Link } from '@inertiajs/react';
 
 // --- ICONS (SVG) ---
 const Icons = {
@@ -45,20 +45,30 @@ const Toast = ({ message, isVisible, onClose }) => {
 };
 
 const AnimatedNumber = ({ value }) => {
+    const end = parseInt(value, 10) || 0;
     const [displayValue, setDisplayValue] = useState(0);
+
     useEffect(() => {
-        let start = 0;
-        const end = parseInt(value, 10);
-        if (start === end) return;
-        let totalDuration = 1000;
-        let incrementTime = (totalDuration / end) * 2; 
-        let timer = setInterval(() => {
-            start += 1;
-            setDisplayValue(start);
-            if (start === end) clearInterval(timer);
-        }, incrementTime);
+        if (displayValue === end) return;
+
+        const duration = 1000; // ms
+        const diff = Math.abs(end - displayValue);
+        if (diff === 0) return;
+
+        const stepTime = Math.max(duration / diff, 10);
+
+        const timer = setInterval(() => {
+            setDisplayValue(prev => {
+                if (prev < end) return prev + 1;
+                if (prev > end) return prev - 1;
+                clearInterval(timer);
+                return prev;
+            });
+        }, stepTime);
+
         return () => clearInterval(timer);
-    }, [value]);
+    }, [end]);
+
     return <span>{displayValue}</span>;
 };
 
@@ -92,9 +102,15 @@ const Navbar = ({ user }) => {
                             </div>
                         </div>
                         <div className="h-8 w-px bg-gray-200 mx-1 hidden sm:block"></div>
-                        <button onClick={handleLogout} className="group p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all duration-300" title="Logout">
+                        <Link 
+                            href={route('logout')} 
+                            method="post" 
+                            as="button" 
+                            className="group p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all duration-300" 
+                            title="Logout"
+                        >
                             <Icons.Logout />
-                        </button>
+                        </Link>
                     </div>
                 </div>
             </div>
@@ -332,28 +348,76 @@ const ReportModal = ({ isOpen, onClose, students, subjectName }) => {
                         </div>
                     </div>
 
-                    <div>
+                    <div className="relative">
                         <div className="flex justify-between items-end mb-4">
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Distribusi Nilai</h4>
+                            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg">Berdasarkan Nilai Akhir</span>
                         </div>
+                        
                         {students.length > 0 ? (
-                            <div className="flex items-end gap-3 h-32 border-b border-gray-200 pb-2 px-2">
-                                {['A', 'B', 'C', 'D'].map((grade, i) => {
-                                    const count = stats.dist[grade];
-                                    const percentage = students.length ? (count / students.length) * 100 : 0;
-                                    const height = percentage === 0 ? 2 : percentage; 
-                                    const color = grade === 'A' ? 'bg-green-500 shadow-green-200' : grade === 'B' ? 'bg-blue-500 shadow-blue-200' : grade === 'C' ? 'bg-yellow-500 shadow-yellow-200' : 'bg-red-500 shadow-red-200';
-                                    return (
-                                        <div key={grade} className="flex-1 flex flex-col justify-end items-center group relative">
-                                            <div className="mb-1 text-xs font-bold text-gray-700 bg-white shadow-sm border border-gray-100 px-1.5 py-0.5 rounded-md transform translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 z-10">{count}</div>
-                                            <div className={`w-full rounded-t-lg transition-all duration-1000 ease-out shadow-md ${color} opacity-90 group-hover:opacity-100`} style={{ height: `${height}%`, transitionDelay: `${i * 100}ms` }}></div>
-                                            <div className="text-[10px] font-bold text-gray-500 mt-2 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{grade}</div>
+                            <div className="relative h-48 mt-8">
+                                {/* Grid Lines */}
+                                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                                    {[0, 25, 50, 75, 100].map((tick) => (
+                                        <div key={tick} className="w-full border-t border-gray-100 flex items-center">
+                                            <span className="text-[8px] text-gray-300 font-bold -ml-6 w-4">{tick}%</span>
                                         </div>
-                                    );
-                                })}
+                                    ))}
+                                </div>
+
+                                {/* Bars Container */}
+                                <div className="absolute inset-0 flex items-end gap-4 px-2">
+                                    {['A', 'B', 'C', 'D'].map((grade, i) => {
+                                        const count = stats.dist[grade];
+                                        const percentage = students.length ? (count / students.length) * 100 : 0;
+                                        const height = percentage === 0 ? 0 : percentage; 
+                                        
+                                        const config = {
+                                            A: { color: 'from-green-400 to-green-600', shadow: 'shadow-green-200', label: '90-100' },
+                                            B: { color: 'from-blue-400 to-blue-600', shadow: 'shadow-blue-200', label: '80-89' },
+                                            C: { color: 'from-yellow-400 to-orange-500', shadow: 'shadow-yellow-200', label: '70-79' },
+                                            D: { color: 'from-red-400 to-red-600', shadow: 'shadow-red-200', label: '< 70' }
+                                        }[grade];
+
+                                        return (
+                                            <div key={grade} className="flex-1 flex flex-col justify-end items-center group relative h-full">
+                                                {/* Tooltip on hover */}
+                                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 pointer-events-none">
+                                                    <div className="bg-gray-900 text-white text-[10px] font-bold py-1.5 px-3 rounded-xl shadow-xl whitespace-nowrap flex flex-col items-center">
+                                                        <span>{count} Siswa ({Math.round(percentage)}%)</span>
+                                                        <div className="w-2 h-2 bg-gray-900 rotate-45 -mb-1 mt-1"></div>
+                                                    </div>
+                                                </div>
+
+                                                {/* The Bar */}
+                                                <div 
+                                                    className={`w-full bg-gradient-to-t ${config.color} rounded-t-2xl transition-all duration-1000 ease-out shadow-lg ${config.shadow} relative group-hover:scale-x-105 group-hover:brightness-110`} 
+                                                    style={{ height: `${height}%`, transitionDelay: `${i * 150}ms` }}
+                                                >
+                                                    {/* Glow effect on top of bar */}
+                                                    <div className="absolute top-0 left-0 w-full h-2 bg-white/20 rounded-t-2xl"></div>
+                                                    
+                                                    {/* Label inside bar if tall enough */}
+                                                    {height > 15 && (
+                                                        <span className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-black text-white/80">{count}</span>
+                                                    )}
+                                                </div>
+
+                                                {/* X-Axis Label */}
+                                                <div className="mt-3 flex flex-col items-center">
+                                                    <span className="text-sm font-black text-gray-700">{grade}</span>
+                                                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">{config.label}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         ) : (
-                            <div className="h-32 flex items-center justify-center text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">Belum ada data nilai.</div>
+                            <div className="h-48 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
+                                <div className="p-3 bg-white rounded-full shadow-sm mb-3"><Icons.Chart /></div>
+                                <p className="text-xs font-bold">Belum ada data nilai untuk dianalisis.</p>
+                            </div>
                         )}
                     </div>
 
@@ -527,7 +591,9 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                         <div className="flex justify-between items-start relative z-10">
                             <div>
                                 <p className="text-blue-100 text-xs font-bold uppercase tracking-widest mb-1">Rata-Rata Kelas</p>
-                                <h3 className="text-4xl font-black tracking-tight"><AnimatedNumber value={calculateAverage} /></h3>
+                                <h3 className="text-4xl font-black tracking-tight">
+                                    <AnimatedNumber value={calculateAverage} />
+                                </h3>
                             </div>
                             <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10 shadow-inner"><Icons.Chart /></div>
                         </div>
@@ -603,7 +669,7 @@ export default function Teacher({ auth, subjects, classes, students, filters, ho
                                 <tbody className="divide-y divide-gray-50">
                                     {activeStudents.length > 0 ? (
                                         activeStudents.map((student, index) => (
-                                            <StudentRow key={student.id} index={index} student={student} subjectId={selectedSubject} onShowToast={showToast} />
+                                            <StudentRow key={`${student.id}-${selectedSubject}`} index={index} student={student} subjectId={selectedSubject} onShowToast={showToast} />
                                         ))
                                     ) : (
                                         <tr>
