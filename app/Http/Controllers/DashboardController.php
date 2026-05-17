@@ -44,13 +44,13 @@ class DashboardController extends Controller
     // ==========================================
     private function adminDashboard($user)
     {
-        // Fix N+1 Query: Pre-load subjects & extras, keyed by teacher_id/coach_id
-        $subjectsByTeacher = Subject::whereNotNull('teacher_id')->get()->keyBy('teacher_id');
-        $extrasByCoach = Extra::whereNotNull('coach_id')->get()->keyBy('coach_id');
+        // [R11 FIX] Gunakan groupBy agar guru dengan >1 mapel tetap tertangkap
+        $subjectsByTeacher = Subject::whereNotNull('teacher_id')->get()->groupBy('teacher_id');
+        $extrasByCoach     = Extra::whereNotNull('coach_id')->get()->groupBy('coach_id');
 
         $users = User::orderBy('created_at', 'desc')->get()->map(function($u) use ($subjectsByTeacher, $extrasByCoach) {
-            $subject = $subjectsByTeacher->get($u->id);
-            $extra   = $extrasByCoach->get($u->id);
+            $subjects = $subjectsByTeacher->get($u->id, collect());
+            $extras   = $extrasByCoach->get($u->id, collect());
 
             return [
                 'id'          => $u->id,
@@ -59,10 +59,10 @@ class DashboardController extends Controller
                 'role'        => $u->role,
                 'nomor_induk' => $u->nomor_induk,
                 'kelas'       => $u->kelas,
-                'mapel_ajar'  => $subject ? $subject->nama_mapel : '-',
-                'ekskul_bina' => $extra ? $extra->nama_ekskul : '-',
-                'subject_id'  => $subject ? $subject->id : '',
-                'extra_id'    => $extra ? $extra->id : '',
+                'mapel_ajar'  => $subjects->isNotEmpty() ? $subjects->pluck('nama_mapel')->join(', ') : '-',
+                'ekskul_bina' => $extras->isNotEmpty()   ? $extras->pluck('nama_ekskul')->join(', ')  : '-',
+                'subject_id'  => $subjects->isNotEmpty() ? $subjects->first()->id : '',
+                'extra_id'    => $extras->isNotEmpty()   ? $extras->first()->id   : '',
             ];
         });
 
@@ -93,18 +93,30 @@ class DashboardController extends Controller
             abort(403, 'Akses ditolak. Hanya admin yang dapat mengelola pengguna.');
         }
 
+        // [BUG-005 FIX] Validasi format nomor_induk sesuai role
+        $nomorIndukRegex = 'nullable|string';
+        $role = $request->role;
+        if ($request->filled('nomor_induk')) {
+            if ($role === 'admin')   $nomorIndukRegex = ['nullable', 'string', 'regex:/^ADM\d+$/i'];
+            if ($role === 'guru')    $nomorIndukRegex = ['nullable', 'string', 'regex:/^G\d+$/i'];
+            if ($role === 'pembina') $nomorIndukRegex = ['nullable', 'string', 'regex:/^C\d+$/i'];
+            if ($role === 'siswa')   $nomorIndukRegex = ['nullable', 'string', 'regex:/^\d+$/'];
+        }
+
         $rules = [
             'name'        => 'required|string|max:255',
             'email'       => ['required', 'email', Rule::unique('users')->ignore($request->id)],
             'role'        => 'required|in:admin,guru,pembina,siswa',
-            'nomor_induk' => 'nullable|string',
+            'nomor_induk' => $nomorIndukRegex,
         ];
 
         if (!$request->id) {
             $rules['password'] = 'required|min:6';
         }
 
-        $request->validate($rules);
+        $request->validate($rules, [
+            'nomor_induk.regex' => 'Format nomor induk tidak sesuai. Admin: ADMxxx, Guru: Gxxx, Pembina: Cxxx, Siswa: angka saja.',
+        ]);
 
         $userData = [
             'name'        => $request->name,
@@ -164,7 +176,6 @@ class DashboardController extends Controller
             'instructor_id' => 'required|exists:users,id',
         ];
 
-        // Validasi conditional: Mapel butuh subject_id, Ekskul butuh extra_id
         if ($request->type === 'mapel') {
             $rules['subject_id'] = 'required|exists:subjects,id';
         } else {
@@ -173,9 +184,46 @@ class DashboardController extends Controller
 
         $request->validate($rules);
 
-        // 2. Simpan ke Database
+        // 2. [BUG-003 FIX] Deteksi Tabrakan Waktu (Time Collision Detection)
+        $editingId = $request->id ?? 0;
+
+        // Cek tabrakan untuk INSTRUKTUR (guru/pembina tidak bisa 2 tempat sekaligus)
+        $instructorCollision = Schedule::where('day', $request->day)
+            ->where('instructor_id', $request->instructor_id)
+            ->where('id', '!=', $editingId)
+            ->where(function ($q) use ($request) {
+                $q->where(function ($inner) use ($request) {
+                    $inner->where('start_time', '<', $request->end_time)
+                          ->where('end_time', '>', $request->start_time);
+                });
+            })->exists();
+
+        if ($instructorCollision) {
+            return redirect()->back()->withErrors([
+                'instructor_id' => 'Instruktur sudah memiliki jadwal lain pada hari dan jam yang sama.'
+            ])->withInput();
+        }
+
+        // Cek tabrakan untuk KELAS (satu kelas tidak bisa 2 pelajaran bersamaan)
+        $classCollision = Schedule::where('day', $request->day)
+            ->where('class_name', $request->class_name)
+            ->where('id', '!=', $editingId)
+            ->where(function ($q) use ($request) {
+                $q->where(function ($inner) use ($request) {
+                    $inner->where('start_time', '<', $request->end_time)
+                          ->where('end_time', '>', $request->start_time);
+                });
+            })->exists();
+
+        if ($classCollision) {
+            return redirect()->back()->withErrors([
+                'class_name' => 'Kelas ' . $request->class_name . ' sudah memiliki jadwal lain pada waktu yang sama.'
+            ])->withInput();
+        }
+
+        // 3. Simpan ke Database
         Schedule::updateOrCreate(
-            ['id' => $request->id],
+            ['id' => $editingId ?: null],
             [
                 'day'           => $request->day,
                 'start_time'    => $request->start_time,
@@ -253,14 +301,46 @@ class DashboardController extends Controller
         }
 
         $val = $request->validate([
-            'student_id'  => 'required|exists:users,id', 'extra_id' => 'required|exists:extras,id',
-            'nilai_teknis' => 'required|numeric|min:0|max:100', 'observasi' => 'nullable', 'rekomendasi' => 'nullable'
+            'student_id'   => 'required|exists:users,id',
+            'extra_id'     => 'required|exists:extras,id',
+            'nilai_teknis' => 'required|numeric|min:0|max:100',
+            'observasi'    => 'nullable|string',
+            'rekomendasi'  => 'nullable|string',
         ]);
-        
+
+        // [BUG-002 FIX] Data-level authorization: pastikan extra_id milik pembina ini
+        $myExtra = Extra::where('coach_id', Auth::id())->first();
+        if (!$myExtra || (int)$myExtra->id !== (int)$val['extra_id']) {
+            abort(403, 'Akses ditolak. Anda hanya dapat mengelola ekskul yang Anda bina.');
+        }
+
+        // [BUG-006 FIX] Validasi logika rekomendasi berdasarkan nilai teknis
+        $nilaiTeknis  = (int)$val['nilai_teknis'];
+        $rekomendasi  = $val['rekomendasi'] ?? '';
+        $rekKompetisi = ['Siap Lomba', 'Potensi Profesional'];
+        $rekLatihan   = ['Perlu Latihan', 'Kompeten'];
+
+        if ($nilaiTeknis > 85 && !in_array($rekomendasi, $rekKompetisi)) {
+            return redirect()->back()->withErrors([
+                'rekomendasi' => 'Nilai teknis > 85: rekomendasi wajib "Siap Lomba" atau "Potensi Profesional".'
+            ])->withInput();
+        }
+
+        if ($nilaiTeknis <= 85 && !in_array($rekomendasi, $rekLatihan) && !empty($rekomendasi)) {
+            return redirect()->back()->withErrors([
+                'rekomendasi' => 'Nilai teknis ≤ 85: rekomendasi wajib "Perlu Latihan" atau "Kompeten".'
+            ])->withInput();
+        }
+
         TalentGrade::updateOrCreate(
             ['student_id' => $val['student_id'], 'extra_id' => $val['extra_id']],
-            ['nilai_teknis' => $val['nilai_teknis'], 'observasi_bakat' => $val['observasi'], 'rekomendasi' => $val['rekomendasi']]
+            [
+                'nilai_teknis'    => $val['nilai_teknis'],
+                'observasi_bakat' => $val['observasi'],
+                'rekomendasi'     => $val['rekomendasi'],
+            ]
         );
+
         return redirect()->back()->with('success', 'Data tersimpan!');
     }
 
@@ -337,14 +417,27 @@ class DashboardController extends Controller
         }
 
         $val = $request->validate([
-            'student_id' => 'required', 'subject_id' => 'required',
-            'uts' => 'required|numeric|min:0|max:100', 'uas' => 'required|numeric|min:0|max:100', 'catatan' => 'nullable'
+            'student_id' => 'required|exists:users,id',
+            'subject_id' => 'required|exists:subjects,id',
+            'uts'        => 'required|numeric|min:0|max:100',
+            'uas'        => 'required|numeric|min:0|max:100',
+            'catatan'    => 'nullable|string|max:1000',
         ]);
-        
+
+        // [BUG-001 FIX] Data-level authorization: pastikan subject_id diampu guru ini
+        $mySubjectIds = Subject::where('teacher_id', Auth::id())->pluck('id');
+        if (!$mySubjectIds->contains((int)$val['subject_id'])) {
+            abort(403, 'Akses ditolak. Anda hanya dapat mengubah nilai mata pelajaran yang Anda ampu.');
+        }
+
+        // [BUG-009 FIX] Sanitasi catatan_guru dari HTML/XSS
+        $catatanBersih = $val['catatan'] ? strip_tags($val['catatan']) : null;
+
         AcademicGrade::updateOrCreate(
             ['student_id' => $val['student_id'], 'subject_id' => $val['subject_id']],
-            ['uts' => $val['uts'], 'uas' => $val['uas'], 'catatan_guru' => $val['catatan']]
+            ['uts' => $val['uts'], 'uas' => $val['uas'], 'catatan_guru' => $catatanBersih]
         );
+
         return redirect()->back()->with('success', 'Nilai tersimpan!');
     }
 
@@ -454,7 +547,7 @@ class DashboardController extends Controller
 
         $apiKey = env('GEMINI_API_KEY');
 
-        // Fallback mock data
+        // Fallback mock data — dideklarasikan SEBELUM semua guard agar tidak undefined
         $mockData = [
             'radarData' => [
                 ['subject' => 'Logika & Sains',      'A' => 75, 'fullMark' => 100],
@@ -493,7 +586,21 @@ class DashboardController extends Controller
             ]);
         }
 
-        // [CACHE HIT] Kembalikan data cache jika ada
+        // [BUG-007 FIX] Validasi kelengkapan data sebelum dikirim ke AI
+        // Ditempatkan setelah $mockData agar array_merge tidak undefined
+        $jumlahMapel = $academics->count();
+        if ($jumlahMapel < 12) {
+            Log::info("AI Career: Siswa ID {$user->id} hanya memiliki {$jumlahMapel}/12 mata pelajaran. Menggunakan mock data.");
+            return Inertia::render('Dashboard/AiCareer', [
+                'auth'     => ['user' => $user],
+                'aiResult' => array_merge($mockData, [
+                    'aiSummary' => "Halo {$user->name}, data akademismu belum lengkap ({$jumlahMapel} dari 12 mata pelajaran). Minta gurumu untuk mengisi nilai agar analisis AI bisa bekerja secara optimal."
+                ]),
+                'warning'  => "Data nilai belum lengkap ({$jumlahMapel}/12 mapel). Analisis AI memerlukan semua nilai untuk akurasi maksimal."
+            ]);
+        }
+
+
         if (Cache::has($cacheKey) && !$request->has('refresh')) {
             return Inertia::render('Dashboard/AiCareer', [
                 'auth'     => ['user' => $user],
@@ -600,11 +707,11 @@ PROMPT;
 
         // 6. Eksekusi Request ke Gemini API
         try {
-            // FIXED: Gunakan ->asJson() agar Content-Type: application/json terkirim dengan benar
+            // [BUG-010 FIX] Gunakan nama model Gemini yang valid
             $response = Http::withoutVerifying()
                 ->asJson()
                 ->timeout(30)
-                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={$apiKey}", [
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={$apiKey}", [
                     'contents' => [
                         [
                             'parts' => [

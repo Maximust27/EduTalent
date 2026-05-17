@@ -21,7 +21,7 @@ const Icons = {
 
 // --- COMPONENTS ---
 
-const Sidebar = ({ activeView, setActiveView, isOpen, setIsOpen }) => {
+const Sidebar = ({ activeView, setActiveView, isOpen, setIsOpen, user }) => {
     const menuItems = [
         { id: 'users', label: 'Management User', icon: Icons.Users },
         { id: 'jadwal', label: 'Management Jadwal', icon: Icons.Calendar },
@@ -82,7 +82,7 @@ const Sidebar = ({ activeView, setActiveView, isOpen, setIsOpen }) => {
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-gray-900 truncate">Administrator</p>
-                            <p className="text-xs text-gray-500 truncate">admin@sekolah.id</p>
+                            <p className="text-xs text-gray-500 truncate">{user?.email || 'admin@sekolah.id'}</p>
                         </div>
                     </div>
                 </div>
@@ -783,6 +783,7 @@ export default function Admin({ auth, users = [], subjects = [], extras = [], st
                 setActiveView={setActiveView} 
                 isOpen={sidebarOpen}
                 setIsOpen={setSidebarOpen}
+                user={user}
             />
 
             {/* Main Content Area */}

@@ -265,7 +265,7 @@ class DummyDataSeeder extends Seeder
                     'type' => 'ekskul',
                     'subject_id' => null,
                     'extra_id' => $ekskuls[$idx]->id,
-                    'class_name' => 'UMUM', // Bisa diikuti oleh seluruh kelas
+                    'class_name' => 'SEMUA KELAS', // [BUG-004 FIX] Konsisten dengan query di studentDashboard()
                     'instructor_id' => $ekskuls[$idx]->coach_id,
                     'created_at' => now(),
                     'updated_at' => now(),
