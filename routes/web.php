@@ -33,6 +33,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/user/save', [DashboardController::class, 'saveUser'])->name('admin.saveUser');
     Route::delete('/admin/user/delete/{id}', [DashboardController::class, 'deleteUser'])->name('admin.deleteUser');
 
+    // Route AI Career Analysis (Siswa)
+    Route::get('/ai-career', [DashboardController::class, 'aiCareer'])->name('ai.career');
+
     // Route Khusus Admin Schedule Management (BARU DITAMBAHKAN)
     Route::post('/admin/schedule/save', [DashboardController::class, 'saveSchedule'])->name('admin.saveSchedule');
     Route::delete('/admin/schedule/delete/{id}', [DashboardController::class, 'deleteSchedule'])->name('admin.deleteSchedule');

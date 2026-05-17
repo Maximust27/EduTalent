@@ -13,6 +13,8 @@ use App\Models\Extra;
 use App\Models\AcademicGrade;
 use App\Models\TalentGrade;
 use App\Models\Schedule;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -390,6 +392,266 @@ class DashboardController extends Controller
             'talents' => $talents, 
             'analysis' => $analysis,
             'schedules' => $schedules
+        ]);
+    }
+
+    public function aiCareer(Request $request)
+    {
+        $user = Auth::user();
+
+        // [SECURITY] Hanya siswa yang boleh akses
+        if ($user->role !== 'siswa') {
+            return redirect()->route('dashboard')->with('error', 'Akses khusus siswa.');
+        }
+
+        // [CACHE] Cek cache per siswa selama 24 jam
+        $cacheKey = "ai_career_result_{$user->id}";
+
+        // 1. Ambil Data Akademik Siswa
+        $academics = AcademicGrade::with('subject')->where('student_id', $user->id)->get()->map(function ($grade) {
+            return [
+                'mapel'        => $grade->subject->nama_mapel,
+                'uts'          => $grade->uts,
+                'uas'          => $grade->uas,
+                'nilai_akhir'  => round(($grade->uts + $grade->uas) / 2),
+                'catatan_guru' => $grade->catatan_guru ?? '-'
+            ];
+        });
+
+        // 2. Ambil Data Bakat/Ekskul Siswa (termasuk rekomendasi pembina)
+        $talents = TalentGrade::with('extra')->where('student_id', $user->id)->get()->map(function ($grade) {
+            return [
+                'ekskul'      => $grade->extra->nama_ekskul,
+                'nilai_teknis' => $grade->nilai_teknis,
+                'observasi'   => $grade->observasi_bakat ?? '-',
+                'rekomendasi' => $grade->rekomendasi ?? '-'
+            ];
+        });
+
+        // 3. Deteksi Jurusan dari nama kelas secara eksplisit
+        $kelasNama = $user->kelas ?? 'Tidak Diketahui';
+        $jurusan = 'Umum';
+        if (stripos($kelasNama, 'MIPA') !== false || stripos($kelasNama, 'IPA') !== false) {
+            $jurusan = 'MIPA/IPA (Sains)';
+        } elseif (stripos($kelasNama, 'IPS') !== false || stripos($kelasNama, 'Sosial') !== false) {
+            $jurusan = 'IPS (Ilmu Sosial)';
+        }
+
+        // 4. Tentukan mapel lintas jurusan (MIPA ambil IPS atau sebaliknya)
+        $mapeIps  = ['Geografi', 'Sosiologi', 'Ekonomi', 'Sejarah'];
+        $mapelMipa = ['Matematika Peminatan', 'Fisika', 'Biologi', 'Kimia'];
+        $lintasJurusan = [];
+        foreach ($academics as $ak) {
+            if ($jurusan === 'MIPA/IPA (Sains)' && in_array($ak['mapel'], $mapeIps)) {
+                $lintasJurusan[] = $ak['mapel'] . ' (nilai: ' . $ak['nilai_akhir'] . ')';
+            } elseif ($jurusan === 'IPS (Ilmu Sosial)' && in_array($ak['mapel'], $mapelMipa)) {
+                $lintasJurusan[] = $ak['mapel'] . ' (nilai: ' . $ak['nilai_akhir'] . ')';
+            }
+        }
+        $lintasInfo = count($lintasJurusan) > 0
+            ? implode(', ', $lintasJurusan)
+            : 'Tidak ada lintas jurusan yang terdeteksi.';
+
+        $apiKey = env('GEMINI_API_KEY');
+
+        // Fallback mock data
+        $mockData = [
+            'radarData' => [
+                ['subject' => 'Logika & Sains',      'A' => 75, 'fullMark' => 100],
+                ['subject' => 'Kreativitas',          'A' => 70, 'fullMark' => 100],
+                ['subject' => 'Fisik & Olahraga',    'A' => 65, 'fullMark' => 100],
+                ['subject' => 'Sosial & Empati',      'A' => 70, 'fullMark' => 100],
+                ['subject' => 'Bahasa & Komunikasi', 'A' => 72, 'fullMark' => 100],
+            ],
+            'matches'  => [
+                ['role' => 'Perlu Data Lengkap', 'match' => 0, 'type' => 'Safe Option'],
+                ['role' => 'API Belum Aktif',    'match' => 0, 'type' => 'Dream Option'],
+                ['role' => 'Hubungi Admin',       'match' => 0, 'type' => 'Future Option']
+            ],
+            'skillTree' => [
+                ['name' => 'Akademik Umum',  'level' => 70, 'status' => 'In Progress'],
+                ['name' => 'Soft Skills',    'level' => 60, 'status' => 'In Progress'],
+                ['name' => 'Hard Skills',    'level' => 40, 'status' => 'Locked'],
+                ['name' => 'Leadership',     'level' => 50, 'status' => 'In Progress'],
+                ['name' => 'Digital Skills', 'level' => 30, 'status' => 'Locked']
+            ],
+            'roadmap' => [
+                ['year' => '2024', 'title' => 'Sedang Berjalan', 'desc' => 'Fokus nilai akademik'],
+                ['year' => '2026', 'title' => 'Kuliah',          'desc' => 'Pilih jurusan sesuai minat'],
+                ['year' => '2030', 'title' => 'Karir Awal',      'desc' => 'Mulai karir pertama'],
+                ['year' => '2034', 'title' => 'Karir Senior',    'desc' => 'Posisi profesional']
+            ],
+            'crossMajorAnalysis' => 'Data lintas jurusan akan tampil setelah AI aktif.',
+            'gapAnalysis'        => 'Gap analysis akan tersedia setelah koneksi AI berhasil.',
+            'aiSummary'          => 'Maaf, AI sedang tidak dapat dihubungi. Data ini adalah simulasi. Silakan coba lagi nanti.'
+        ];
+
+        if (!$apiKey) {
+            return Inertia::render('Dashboard/AiCareer', [
+                'auth'     => ['user' => $user],
+                'aiResult' => $mockData
+            ]);
+        }
+
+        // [CACHE HIT] Kembalikan data cache jika ada
+        if (Cache::has($cacheKey) && !$request->has('refresh')) {
+            return Inertia::render('Dashboard/AiCareer', [
+                'auth'     => ['user' => $user],
+                'aiResult' => Cache::get($cacheKey)
+            ]);
+        }
+
+        // 5. Bangun Prompt Super-Lengkap untuk Gemini AI
+        $akademikJson = json_encode($academics->values(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $bakat        = json_encode($talents->values(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        $prompt = <<<PROMPT
+Bertindaklah sebagai Konsultan Karier AI Senior dan Pakar Pendidikan Indonesia.
+Analisis profil siswa berikut ini secara MENDALAM dan PERSONAL:
+
+=== DATA IDENTITAS SISWA ===
+- Nama Lengkap  : {$user->name}
+- Nomor Induk   : {$user->nomor_induk}
+- Kelas         : {$kelasNama}
+- Jurusan       : {$jurusan}
+
+=== DATA AKADEMIK (12 Mata Pelajaran) ===
+{$akademikJson}
+
+=== DATA BAKAT & EKSTRAKURIKULER ===
+{$bakat}
+
+=== MATA PELAJARAN LINTAS JURUSAN YANG TERDETEKSI ===
+{$lintasInfo}
+
+=== INSTRUKSI ANALISIS WAJIB ===
+1. PEMBOBOTAN:
+   - 40% bobot dari rata-rata nilai akademik (terutama mapel peminatan jurusan)
+   - 40% bobot dari nilai_teknis ekskul dan observasi pembina
+   - 20% bobot dari catatan_guru (pola kepribadian siswa)
+
+2. ANALISIS LINTAS JURUSAN:
+   Gunakan data "MATA PELAJARAN LINTAS JURUSAN" di atas. Jika nilai lintas jurusan tinggi (>80), pertimbangkan karier di bidang Hybrid seperti Fintech, Data Science, atau Komunikasi Sains.
+
+3. GAP ANALYSIS:
+   Sebutkan 2-3 skill SPESIFIK (contoh: Python, Statistik, Public Speaking) yang belum terlihat di data siswa namun SANGAT DIBUTUHKAN untuk mencapai karier yang kamu rekomendasikan.
+
+4. REKOMENDASI KULIAH:
+   Berikan TEPAT 3 opsi:
+   - Safe Option : jurusan yang realistis dicapai dengan nilai saat ini
+   - Dream Option: jurusan ideal sesuai bakat terkuat
+   - Future Option: jurusan yang akan sangat relevan di masa depan (5-10 tahun)
+   WAJIB: Sertakan nama UNIVERSITAS RIIL yang benar-benar ada di Indonesia (contoh: UI, ITB, UGM, UNAIR, ITS, UNDIP, BINUS, UNPAD, dll.). DILARANG mengarang nama universitas fiktif.
+
+5. RADAR DATA:
+   Hitung skor 0-100 untuk 5 dimensi berdasarkan data nyata siswa:
+   - Logika & Sains    : dari nilai Matematika, Fisika, Kimia, Biologi
+   - Kreativitas        : dari nilai Seni, data ekskul kreatif (Tari, Paduan Suara)
+   - Fisik & Olahraga  : dari nilai PJOK dan ekskul olahraga (Basket, Futsal, Voli)
+   - Sosial & Empati   : dari nilai PKn, Sosiologi, ekskul sosial (PMR, Rohis, Pramuka)
+   - Bahasa & Komunikasi: dari nilai Bahasa Indonesia, Bahasa Inggris, English Club
+
+6. SKILL TREE:
+   Buat 5 skill yang RELEVAN dengan karier yang kamu rekomendasikan. Status:
+   - "Mastered"     : skill yang tercermin sudah baik dari data (nilai/ekskul tinggi)
+   - "In Progress"  : skill yang ada petunjuknya tapi masih perlu dikembangkan
+   - "Locked"       : skill yang belum sama sekali terlihat di data siswa
+
+7. ROADMAP:
+   Buat 4 milestone realistis sesuai tahun saat ini (2024-2035), spesifik untuk siswa ini.
+
+8. GAYA BAHASA:
+   Gunakan nada memotivasi, inspiratif, dan REALISTIS. Jangan berlebihan.
+   aiSummary harus menyebut nama siswa dan jurusannya secara eksplisit.
+
+=== FORMAT OUTPUT ===
+KEMBALIKAN HANYA JSON MURNI (tanpa markdown, tanpa penjelasan tambahan):
+{
+  "radarData": [
+    {"subject": "Logika & Sains", "A": 0, "fullMark": 100},
+    {"subject": "Kreativitas", "A": 0, "fullMark": 100},
+    {"subject": "Fisik & Olahraga", "A": 0, "fullMark": 100},
+    {"subject": "Sosial & Empati", "A": 0, "fullMark": 100},
+    {"subject": "Bahasa & Komunikasi", "A": 0, "fullMark": 100}
+  ],
+  "matches": [
+    {"role": "Nama Profesi Safe", "match": 0, "type": "Safe Option"},
+    {"role": "Nama Profesi Dream", "match": 0, "type": "Dream Option"},
+    {"role": "Nama Profesi Future", "match": 0, "type": "Future Option"}
+  ],
+  "skillTree": [
+    {"name": "Skill 1", "level": 0, "status": "Mastered"},
+    {"name": "Skill 2", "level": 0, "status": "In Progress"},
+    {"name": "Skill 3", "level": 0, "status": "Locked"},
+    {"name": "Skill 4", "level": 0, "status": "Mastered"},
+    {"name": "Skill 5", "level": 0, "status": "In Progress"}
+  ],
+  "roadmap": [
+    {"year": "2024", "title": "Fokus Akademik", "desc": "..."},
+    {"year": "2026", "title": "Kuliah di [Nama Univ] - [Jurusan]", "desc": "..."},
+    {"year": "2030", "title": "Junior [Nama Profesi]", "desc": "..."},
+    {"year": "2034", "title": "Senior [Nama Profesi]", "desc": "..."}
+  ],
+  "crossMajorAnalysis": "Analisis lintas jurusan spesifik untuk siswa ini...",
+  "gapAnalysis": "Gap analysis spesifik dengan menyebut skill konkret yang kurang...",
+  "aiSummary": "Paragraf memotivasi yang menyebut nama dan jurusan siswa secara eksplisit..."
+}
+PROMPT;
+
+        // 6. Eksekusi Request ke Gemini API
+        try {
+            // FIXED: Gunakan ->asJson() agar Content-Type: application/json terkirim dengan benar
+            $response = Http::withoutVerifying()
+                ->asJson()
+                ->timeout(30)
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={$apiKey}", [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                ['text' => $prompt]
+                            ]
+                        ]
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.7,
+                        'topK'        => 40,
+                        'topP'        => 0.95,
+                    ]
+                ]);
+
+            if ($response->successful()) {
+                $result = $response->json();
+                if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
+                    $jsonString = $result['candidates'][0]['content']['parts'][0]['text'];
+
+                    // Bersihkan markdown block jika ada
+                    $jsonString = preg_replace('/```json|```/i', '', $jsonString);
+                    $jsonString = trim($jsonString);
+
+                    $aiResultData = json_decode($jsonString, true);
+
+                    if ($aiResultData && is_array($aiResultData)) {
+                        // [CACHE] Simpan hasil 24 jam
+                        Cache::put($cacheKey, $aiResultData, 86400);
+
+                        return Inertia::render('Dashboard/AiCareer', [
+                            'auth'     => ['user' => $user],
+                            'aiResult' => $aiResultData
+                        ]);
+                    }
+                }
+            }
+
+            Log::error('Gemini API Error: HTTP ' . $response->status() . ' — ' . $response->body());
+
+        } catch (\Exception $e) {
+            Log::error('Gemini API Exception: ' . $e->getMessage());
+        }
+
+        // 7. Fallback terakhir
+        return Inertia::render('Dashboard/AiCareer', [
+            'auth'     => ['user' => $user],
+            'aiResult' => $mockData
         ]);
     }
 }

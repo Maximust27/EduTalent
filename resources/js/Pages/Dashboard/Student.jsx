@@ -299,9 +299,9 @@ const AnalysisCard = ({ analysis }) => (
                 </div>
             </div>
 
-            <button className="mt-8 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 group-hover:translate-y-[-2px] hover:shadow-indigo-600/50">
+            <Link href={route('ai.career')} className="mt-8 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 group-hover:translate-y-[-2px] hover:shadow-indigo-600/50">
                 Lihat Detail Karir <Icons.ArrowRight />
-            </button>
+            </Link>
         </div>
     </div>
 );
